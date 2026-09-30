@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="sr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b2742">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Budžet">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+/* ======================================================================
+   PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
+   ====================================================================== */
+const CONFIG={
+  firebase:{
+    apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
+    authDomain:"moni-42a31.firebaseapp.com",
+    projectId:"moni-42a31",
+    appId:"1:302441198658:web:3b2e1a070c3b9ec200a9db"
+  },
+  // adresa tvog Cloudflare Worker-a, npr. "https://ekasa-proxy.tvojnalog.workers.dev"
+  ekasaProxy:"https://ekasa-proxy.somodi-marek.workers.dev/"
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script type="module">
+if(CONFIG.firebase.apiKey){
+  const V="10.14.1";
+  const {initializeApp}=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+  const A=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
+  const F=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+  const app=initializeApp(CONFIG.firebase);
+  const auth=A.getAuth(app);
+  let db;try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
+  window.__fb={db,doc:F.doc,setDoc:F.setDoc,deleteDoc:F.deleteDoc,collection:F.collection,onSnapshot:F.onSnapshot,
+    onAuth:cb=>A.onAuthStateChanged(auth,cb),signIn:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),signOut:()=>A.signOut(auth)};
+  window.dispatchEvent(new Event("fb-ready"));
+}
+</script>
+<title>Budžetiranje</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: single phone column, sticky month header, content tabs, fixed bottom tab bar + floating add button */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --surface2:#f5f7fb; --ink:#16203a; --muted:#66708a; --line:#dde2ec;
+  --head:#1b2742; --head-ink:#ffffff; --head-muted:#aab5cf;
+  --g1:#2f5fb3; --g2:#d27c12; --g3:#2a8753;
+  --ok:#2a8753; --warn:#d27c12; --bad:#c9352b;
+  --ok-bg:#e3f3ea; --warn-bg:#fcefdc; --bad-bg:#fbe5e3; --info-bg:#e5edfb; --soft-bg:#fff7e0; --soft:#a8790a;
+  --display:"Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --body:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c1120; --surface:#151c2f; --surface2:#1b2339; --ink:#e8ecf5; --muted:#94a0bb; --line:#263049;
+  --head:#111a2e; --head-ink:#ffffff; --head-muted:#8f9bb8;
+  --g1:#6d98ea; --g2:#f0a447; --g3:#4fbf82;
+  --ok:#4fbf82; --warn:#f0a447; --bad:#f06b60;
+  --ok-bg:#16322a; --warn-bg:#3a2a14; --bad-bg:#3d1c1c; --info-bg:#1a2745; --soft-bg:#332b12; --soft:#e8c35a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1120; --surface:#151c2f; --surface2:#1b2339; --ink:#e8ecf5; --muted:#94a0bb; --line:#263049;
+  --head:#111a2e; --head-ink:#ffffff; --head-muted:#8f9bb8;
+  --g1:#6d98ea; --g2:#f0a447; --g3:#4fbf82;
+  --ok:#4fbf82; --warn:#f0a447; --bad:#f06b60;
+  --ok-bg:#16322a; --warn-bg:#3a2a14; --bad-bg:#3d1c1c; --info-bg:#1a2745; --soft-bg:#332b12; --soft:#e8c35a; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--g1);outline-offset:2px}
+.app{max-width:540px;margin:0 auto;padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--head);color:var(--head-ink);padding:14px 16px 12px}
+.top-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mbtn{width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.1);color:var(--head-ink);font-size:20px;line-height:1;display:grid;place-items:center}
+.mlabel{text-align:center;min-width:0}
+.mlabel .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--head-muted)}
+.mlabel h1{margin:2px 0 0;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.01em}
+
+main{padding:16px;display:flex;flex-direction:column;gap:16px}
+.banner{background:var(--warn-bg);color:var(--ink);border-radius:12px;padding:10px 12px;font-size:13px}
+.card{background:var(--surface);border-radius:18px;padding:16px;border:1px solid var(--line)}
+.sec-title{font-family:var(--display);font-weight:600;font-size:17px;margin:0 0 10px;text-wrap:balance}
+.lbl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+/* hero */
+.hero{background:var(--surface);border-radius:22px;padding:18px 18px 16px;border:1px solid var(--line)}
+.hero .big{font-family:var(--display);font-weight:800;font-size:44px;line-height:1.05;margin:4px 0 2px;letter-spacing:-.01em}
+.hero .sub{color:var(--muted);font-size:13px}
+.meter{height:10px;border-radius:6px;background:var(--surface2);overflow:hidden;margin:14px 0 6px;display:flex}
+.meter i{display:block;height:100%}
+.meter-legend{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.kpi b{display:block;font-family:var(--display);font-weight:800;font-size:20px;margin-top:2px}
+.kpi small{color:var(--muted);font-size:12px}
+
+/* donut */
+.donut-wrap{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:center}
+.donut{width:150px;height:150px}
+.donut text{fill:var(--ink)}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:13px;min-width:0}
+.legend div{display:flex;align-items:center;gap:8px}
+.legend .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.legend span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.legend span:last-child{color:var(--muted)}
+@media (max-width:360px){.donut-wrap{grid-template-columns:1fr;justify-items:center}}
+
+/* categories */
+.group{border-radius:18px;background:var(--surface);border:1px solid var(--line);overflow:hidden}
+.ghead{display:flex;justify-content:space-between;align-items:baseline;padding:12px 16px;border-left:5px solid var(--gc)}
+.ghead h3{margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--gc)}
+.ghead .num{font-size:13px;color:var(--muted)}
+.crow{padding:12px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+.crow-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.crow-name{font-weight:600}
+.crow-amt{font-size:13px;color:var(--muted);white-space:nowrap}
+.crow-amt b{color:var(--ink)}
+.bar{height:6px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:4px}
+.crow-foot{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:8px}
+.pill{font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.none{color:var(--muted)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+td{padding:9px 4px;border-bottom:1px solid var(--line);text-align:right}
+tr:last-child td{border-bottom:0}
+.pos{color:var(--bad);font-weight:700}.neg{color:var(--ok);font-weight:700}
+.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;gap:8px}
+.kv:last-child{border-bottom:0}
+.kv b{white-space:nowrap}
+.kv.total{font-weight:700;font-size:15px}
+.note{font-size:12px;color:var(--muted);margin:10px 0 0}
+
+/* transactions */
+.tx-head{display:flex;justify-content:space-between;align-items:baseline}
+.day{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:6px 4px 6px}
+.txlist{background:var(--surface);border-radius:16px;border:1px solid var(--line);overflow:hidden}
+.tx{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;background:none;border:0;border-top:1px solid var(--line);text-align:left}
+.tx:first-child{border-top:0}
+.tx .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;background:var(--gc);flex:none}
+.tx .mid{flex:1;min-width:0}
+.tx .mid b{display:block;font-weight:600}
+.tx .mid span{display:block;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tx .amt{font-weight:700;white-space:nowrap}
+.copybox{display:flex;flex-direction:column}
+.copyarea{margin-top:8px;width:100%;min-height:90px;font:12px/1.4 ui-monospace,monospace;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px}
+.empty{text-align:center;padding:28px 16px;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
+
+/* plan form */
+.field{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.field:last-child{border-bottom:0}
+.field label{font-weight:600;min-width:0}
+.field label small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.money{display:flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:0 10px;width:132px;flex:none}
+.money input{width:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-weight:700;text-align:right;padding:9px 0;font-variant-numeric:tabular-nums}
+.money input:focus{outline:none}
+.money:focus-within{border-color:var(--g1)}
+.btn{border:0;border-radius:14px;padding:14px 16px;font-weight:700;font-size:16px;width:100%}
+.btn.primary{background:var(--head);color:#fff}
+:root[data-theme="dark"] .btn.primary{background:var(--g1)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{background:var(--g1)}}
+.btn.ghost{background:var(--surface2);color:var(--ink)}
+.btn.danger{background:var(--bad-bg);color:var(--bad)}
+
+/* tab bar + fab */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
+.tabs-in{max-width:540px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr 64px 1fr 1fr;align-items:center}
+.mbtn.off{visibility:hidden}
+.tab{background:none;border:0;padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:600;color:var(--muted)}
+.tab svg{width:22px;height:22px}
+.tab[aria-current="page"]{color:var(--ink)}
+.fab{justify-self:center;width:56px;height:56px;border-radius:50%;border:0;background:var(--g1);color:#fff;font-size:30px;line-height:1;margin-top:-26px;box-shadow:0 6px 18px rgba(20,40,90,.3)}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(8,12,24,.45);z-index:10;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:540px;border-radius:22px 22px 0 0;padding:10px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:92%;overflow-y:auto;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.sheet{animation:none}}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 12px}
+.sheet h2{font-family:var(--display);font-size:20px;margin:0 0 12px}
+.amt-in{display:flex;align-items:baseline;justify-content:center;gap:6px;padding:8px 0 14px}
+.amt-in input{font-family:var(--display);font-weight:800;font-size:44px;width:100%;max-width:260px;text-align:right;border:0;background:transparent;color:var(--ink);font-variant-numeric:tabular-nums}
+.amt-in input:focus{outline:none}
+.amt-in span{font-family:var(--display);font-weight:800;font-size:30px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--gc);border-color:var(--gc);color:#fff}
+.inrow{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.inrow input{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
+.actions{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.err{color:var(--bad);font-size:13px;min-height:18px}
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--head);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:20;max-width:90%}
+.loading{padding:40px 16px;text-align:center;color:var(--muted)}
+/* accounts */
+.acc-list{background:var(--surface);border-radius:16px;border:1px solid var(--line);overflow:hidden}
+.acc{display:flex;align-items:center;gap:12px;width:100%;padding:13px 14px;background:none;border:0;border-top:1px solid var(--line);text-align:left}
+.acc:first-child{border-top:0}
+.acc .ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff;background:var(--gc);flex:none}
+.acc .mid{flex:1;min-width:0}
+.acc .mid b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc .mid span{display:block;color:var(--muted);font-size:12.5px}
+.acc .amt{font-weight:800;font-family:var(--display);font-size:17px;white-space:nowrap}
+.acc.out .amt{color:var(--muted)}
+.sub-h{display:flex;justify-content:space-between;align-items:baseline;margin:2px 4px 8px}
+.sub-h h3{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.switch b{display:block;font-weight:600}
+.switch small{color:var(--muted);font-size:12px}
+.switch input{appearance:none;-webkit-appearance:none;width:50px;height:30px;border-radius:999px;background:var(--line);position:relative;flex:none;cursor:pointer;transition:background .15s}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .15s}
+.switch input:checked{background:var(--ok)}
+.switch input:checked::after{transform:translateX(20px)}
+.inrow select{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
+.acc-sum{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.acc-sum span{font-size:12.5px;color:var(--muted)}
+.acc-sum b{color:var(--ink)}
+.linkbtn{background:none;border:0;color:var(--g1);font-weight:700;padding:0;font-size:13px}
+.subs{margin:4px 0 8px 12px;padding:10px 0 4px 12px;border-left:2px dashed var(--line);display:flex;flex-direction:column;gap:8px}
+.subs-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.mini-sw{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);font-weight:600;cursor:pointer}
+.mini-sw input{width:16px;height:16px;accent-color:var(--g1)}
+.sublist{display:flex;flex-direction:column;gap:6px}
+.srow{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border-radius:12px;border:1px solid var(--line);border-left:4px solid var(--sc,var(--line));background:var(--sb,var(--surface));text-align:left;transition:background .2s}
+.srow .sday{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--surface2);color:var(--sc,var(--ink));flex:none}
+.srow .mid{flex:1;min-width:0}
+.srow .mid b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .mid span{display:block;font-size:12px;color:var(--sc,var(--muted));font-weight:600}
+.srow .amt{font-weight:700;white-space:nowrap}
+.srow.s-now{--sc:var(--bad);--sb:var(--bad-bg)}
+.srow.s-3{--sc:var(--warn);--sb:var(--warn-bg)}
+.srow.s-7{--sc:var(--soft);--sb:var(--soft-bg)}
+.srow.s-14{--sc:var(--g1);--sb:var(--info-bg)}
+.srow.s-far{--sc:var(--muted)}
+.srow.s-done{--sc:var(--ok);opacity:.75}
+.subs-sum{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.subs-sum b{color:var(--ink)}
+.okmark{color:var(--ok);font-weight:700}
+.subs-tg{background:none;border:0;padding:0;text-align:left;min-width:0;display:flex;flex-direction:column;gap:1px}
+.subs-tg .tg-name{font-weight:600;display:flex;align-items:center;gap:6px}
+.subs-tg .chev{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface2);color:var(--muted);font-size:15px;transition:transform .15s}
+.subs-tg[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.subs-tg small{font-size:12px;color:var(--sc,var(--muted));font-weight:600}
+.subs-tg.s-now{--sc:var(--bad)}.subs-tg.s-3{--sc:var(--warn)}.subs-tg.s-7{--sc:var(--soft)}.subs-tg.s-14{--sc:var(--g1)}
+@media (prefers-reduced-motion: reduce){.subs-tg .chev{transition:none}}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
+.seg button{border:0;background:none;border-radius:9px;padding:9px;font-weight:700;font-size:14px;color:var(--muted)}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.btn.scan{background:var(--g1);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px}
+.scanning{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 8px 10px;text-align:center}
+.scanning b{font-size:17px}.scanning span{color:var(--muted);font-size:13px}
+.spin{width:38px;height:38px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--g1);animation:sp 0.9s linear infinite;margin-bottom:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}}
+.rv-items{display:flex;flex-direction:column;gap:8px}
+.rv-it{border:1px solid var(--line);border-radius:12px;padding:8px;background:var(--surface2);display:flex;flex-direction:column;gap:6px}
+.rv-top{display:flex;gap:6px;align-items:center}
+.rv-name{flex:1;min-width:0;font:inherit;font-weight:600;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px}
+.rv-money{width:100px;background:var(--surface)}
+.rv-x{border:0;background:none;color:var(--muted);font-size:22px;width:30px;height:30px;flex:none}
+.rv-bot{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rv-bot select{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:6px 8px;max-width:100%}
+.rv-raw{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+.rv-sum{border-top:1px solid var(--line);padding-top:6px}
+.rv-warn{background:var(--warn-bg);color:var(--warn);font-weight:600;font-size:13px;border-radius:10px;padding:8px 10px;margin:6px 0}
+.rv-ok{color:var(--ok);font-weight:700;font-size:13px;margin:6px 0}
+.rd-it{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+.rd-it:first-child{border-top:0}
+.rd-it .mid{flex:1;min-width:0}.rd-it .mid b{display:block;font-weight:600}.rd-it .mid span{font-size:12px;color:var(--muted)}
+.rd-it .amt{font-weight:700;white-space:nowrap}
+.gbars{display:flex;flex-direction:column;gap:10px}
+.gbar-top{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:4px;gap:8px}
+.muted{color:var(--muted);font-weight:400;font-size:12.5px}
+#gsearch{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
+.qrbox{position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%}
+.qrbox video{width:100%;height:100%;object-fit:cover;display:block}
+.qrframe{position:absolute;inset:18% 22%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.qrmsg{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-weight:600;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+body.nologin .tabs,body.nologin .mbtn{visibility:hidden}
+.login input{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
+html{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;font-size:14px}
+img{max-width:100%}[hidden]{display:none!important}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="top-row">
+      <button class="mbtn" id="prevM" aria-label="Prethodni mesec">‹</button>
+      <div class="mlabel"><div class="eyebrow" id="viewName">Pregled</div><h1 id="monthTitle">—</h1></div>
+      <button class="mbtn" id="nextM" aria-label="Sledeći mesec">›</button>
+    </div>
+  </header>
+  <main id="main"><div class="loading">Učitavam budžet…</div></main>
+</div>
+
+<nav class="tabs" aria-label="Glavni meni">
+  <div class="tabs-in">
+    <button class="tab" data-tab="pregled" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg>Pregled</button>
+    <button class="tab" data-tab="transakcije">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg>Transakcije</button>
+    <button class="fab" id="fab" aria-label="Dodaj trošak">+</button>
+    <button class="tab" data-tab="plan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Plan</button>
+    <button class="tab" data-tab="racuni">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18M7 15h4"/></svg>Računi</button>
+  </div>
+</nav>
+<div id="layer"></div>
+
+<script>
+(function(){
+const GROUPS=[
+  {id:"osnovni",name:"Osnovni troškovi",rule:"Potrebe",rec:.5,color:"--g1",cats:[["hipoteka","Hipoteka"],["racuni","Računi"],["pretplate","Online pretplate"],["hrana","Hrana"]]},
+  {id:"licno",name:"Lično",rule:"Želje",rec:.3,color:"--g2",cats:[["cigare","Cigare"],["razno","Razno"]]},
+  {id:"invest",name:"Investicije i štednja",rule:"Štednja",rec:.2,color:"--g3",cats:[["etf","ETF"],["zlato","Investiciono zlato"]]}
+];
+const CATS={};GROUPS.forEach(g=>g.cats.forEach(([id,name],i)=>CATS[id]={id,name,group:g,shade:[1,.78,.58,.42][i]}));
+const MONTHS=["januar","februar","mart","april","maj","jun","jul","avgust","septembar","oktobar","novembar","decembar"];
+const DAYS=["nedelja","ponedeljak","utorak","sreda","četvrtak","petak","subota"];
+const nf=new Intl.NumberFormat("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pf=new Intl.NumberFormat("de-DE",{minimumFractionDigits:1,maximumFractionDigits:1});
+const eur=v=>nf.format(v||0)+" €";
+const pct=v=>isFinite(v)?pf.format((v||0)*100)+"%":"–";
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const parseNum=s=>{s=String(s||"").trim().replace(/\s|€/g,"");if(!s)return NaN;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");return Number(s)};
+const todayISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const mkey=d=>d.slice(0,7);
+const shift=(k,n)=>{let[y,m]=k.split("-").map(Number);m+=n;while(m>12){m-=12;y++}while(m<1){m+=12;y--}return y+"-"+String(m).padStart(2,"0")};
+const mTitle=k=>{const[y,m]=k.split("-");return MONTHS[m-1].toUpperCase()+" "+y};
+
+let months={},txs=[],accounts=[],transfers=[],subs=[],cur=mkey(todayISO()),tab="pregled",ready={m:false,t:false,a:false,r:false,s:false,p:false},store=null,localMode=false,readOnly=false,picked=false;
+const ATYPES={
+  kartica:{name:"Kartica",ic:"KA",inc:true,color:"--g1"},
+  tekuci:{name:"Tekući račun",ic:"TR",inc:true,color:"--g1"},
+  kes:{name:"Keš",ic:"€",inc:true,color:"--g2"},
+  stednja:{name:"Štednja",ic:"ŠT",inc:false,color:"--g3"},
+  invest:{name:"Investicije",ic:"IN",inc:false,color:"--g3"},
+  ostalo:{name:"Ostalo",ic:"•",inc:true,color:"--muted"}};
+const CAM='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const newId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function accBal(a){const since=a.setAt||0;let b=+a.opening||0;
+  txs.forEach(t=>{if(t.account===a.id&&(t.created||0)>since)b-=+t.amount||0});
+  transfers.forEach(r=>{if((r.created||0)<=since)return;if(r.from===a.id)b-=+r.amount||0;if(r.to===a.id)b+=+r.amount||0});
+  return Math.round(b*100)/100}
+function accSorted(){return accounts.slice().sort((a,b)=>(a.order||0)-(b.order||0)||(a.created||0)-(b.created||0))}
+function accTotals(){let inB=0,outB=0;accounts.forEach(a=>{const b=accBal(a);if(a.include)inB+=b;else outB+=b});return{inB,outB,all:inB+outB}}
+let lastAcc="";try{lastAcc=localStorage.getItem("budzet-lastacc")||""}catch(e){}
+
+/* ---------- data access ---------- */
+function monthData(k){
+  if(months[k])return {...months[k],_exists:true};
+  const keys=Object.keys(months).sort();
+  const prev=keys.filter(x=>x<k).pop(), next=keys.find(x=>x>k), src=prev||next;
+  const base=src?months[src]:{income:0,budgets:{}};
+  return {income:base.income||0,budgets:{...(base.budgets||{})},carry:null,_exists:false};
+}
+function calc(k,depth=0){
+  const m=monthData(k),inc=+m.income||0;
+  const spent={};txs.forEach(t=>{if(t.month===k)spent[t.cat]=(spent[t.cat]||0)+(+t.amount||0)});
+  const cats={};let plan=0,spentAll=0;
+  Object.values(CATS).forEach(c=>{const b=+(m.budgets||{})[c.id]||0,s=spent[c.id]||0;cats[c.id]={b,s};plan+=b;spentAll+=s});
+  Object.keys(spent).forEach(id=>{if(!CATS[id])spentAll+=spent[id]});
+  const g={};GROUPS.forEach(G=>{g[G.id]={b:0,s:0};G.cats.forEach(([id])=>{g[G.id].b+=cats[id].b;g[G.id].s+=cats[id].s})});
+  const kes=inc-Math.max(plan,spentAll);
+  let carry=m.carry;
+  if(typeof carry!=="number"){const pk=shift(k,-1);carry=(months[pk]&&depth<24)?calc(pk,depth+1).ukupnoKes:0}
+  const ukupnoKes=kes+carry;
+  return {m,inc,cats,g,plan,spent:spentAll,kes,carry,autoCarry:typeof m.carry!=="number",ukupnoKes,
+    ostaje:inc-spentAll,invRate:inc?g.invest.b/inc:0,pokriva:g.osnovni.b?ukupnoKes/g.osnovni.b:0,
+    stednja:inc?(g.invest.b+kes)/inc:0};
+}
+function status(b,s){if(!s)return["–","none"];const r=b?s/b:Infinity;if(r>1)return["PREKORAČENO","bad"];if(r>=.9)return["BLIZU LIMITA","warn"];return["U REDU","ok"]}
+
+/* ---------- rendering ---------- */
+const $=s=>document.querySelector(s);
+function render(){
+  const accTab=tab==="racuni";
+  $("#monthTitle").textContent=accTab?"STANJE DANAS":mTitle(cur);
+  $("#viewName").textContent={pregled:"Pregled",transakcije:"Transakcije",plan:"Plan budžeta",racuni:"Moji računi"}[tab];
+  $("#prevM").classList.toggle("off",accTab);$("#nextM").classList.toggle("off",accTab);
+  document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
+  if(!(ready.m&&ready.t&&ready.a&&ready.r&&ready.s&&ready.p)){$("#main").innerHTML='<div class="loading">Učitavam budžet…</div>';return}
+  const c=calc(cur);let h="";
+  if(localMode)h+='<div class="banner">Podaci se sada čuvaju samo u ovom pregledaču. Otvori aplikaciju prijavljen na claude.ai da bi se čuvali trajno i na svim uređajima.</div>';
+  if(readOnly)h+='<div class="banner">Imaš pristup samo za čitanje, pa izmene neće biti sačuvane.</div>';
+  h+= tab==="pregled"?viewOverview(c):tab==="transakcije"?viewTx(c):tab==="racuni"?viewAccounts():viewPlan(c);
+  $("#main").innerHTML=h;
+  if(tab==="plan")bindPlan();
+  if(tab==="transakcije"&&$("#copyTx"))$("#copyTx").onclick=copyForSheet;
+  if(tab==="transakcije")bindGroceries();
+}
+function copyForSheet(){
+  const list=txs.filter(t=>t.month===cur).sort((a,b)=>a.date.localeCompare(b.date)||(a.created||0)-(b.created||0));
+  const clean=s=>String(s||"").replace(/[\t\r\n]+/g," ");
+  const tsv=list.map(t=>{const[y,m,d]=t.date.split("-");const cat=CATS[t.cat]?CATS[t.cat].name.toUpperCase():t.cat;
+    return[`${d}.${m}.${y}`,cat,clean(t.desc),String((+t.amount).toFixed(2)).replace(".",",")].join("\t")}).join("\n");
+  const fallback=()=>{const ta=$("#copyArea");ta.hidden=false;ta.value=tsv;ta.focus();ta.select();toast("Tekst je označen, kopiraj ga ručno")};
+  try{navigator.clipboard.writeText(tsv).then(()=>toast(list.length+" troškova kopirano"),fallback)}catch(e){fallback()}
+}
+function viewOverview(c){
+  const over=c.spent>c.plan&&c.plan>0;
+  const spentW=c.inc?Math.min(c.spent/c.inc,1)*100:0, planW=c.inc?Math.max(Math.min(c.plan/c.inc,1)*100-spentW,0):0;
+  let h=`<section class="hero"><div class="lbl">Ostaje ovog meseca</div>
+  <div class="big num" style="color:${c.ostaje<0?"var(--bad)":"var(--ink)"}">${eur(c.ostaje)}</div>
+  <div class="sub num">Prihod ${eur(c.inc)} · potrošeno ${eur(c.spent)}</div>
+  <div class="meter" aria-hidden="true"><i style="width:${spentW}%;background:${over?"var(--bad)":"var(--g1)"}"></i><i style="width:${planW}%;background:var(--line)"></i></div>
+  <div class="meter-legend num"><span>Potrošeno ${pct(c.plan?c.spent/c.plan:0)} plana</span><span>Plan ${eur(c.plan)}</span></div></section>`;
+  if(accounts.length){const T=accTotals();
+    h+=`<section class="card"><div class="sub-h" style="margin:0 0 4px"><div class="lbl">Novac na računima u budžetu</div><button class="linkbtn" data-goto="racuni" type="button">Računi ›</button></div>
+    <div class="num" style="font-family:var(--display);font-weight:800;font-size:28px;color:${T.inB<0?"var(--bad)":"var(--ink)"}">${eur(T.inB)}</div>
+    <div class="acc-sum num"><span>Van budžeta <b>${eur(T.outB)}</b></span><span>Ukupno <b>${eur(T.all)}</b></span></div></section>`}
+  const soon=subs.map(x=>({x,u:subDue(x.day)})).filter(o=>o.u.days<=7).sort((a,b)=>a.u.days-b.u.days);
+  if(soon.length){h+=`<section class="card"><div class="sub-h" style="margin:0 0 8px"><div class="lbl">Naplata u narednih 7 dana</div><button class="linkbtn" data-goto="plan" type="button">Sve ›</button></div><div class="sublist">`;
+    soon.forEach(({x})=>{const st=subState(x);h+=`<button type="button" class="srow ${st.cls}" data-sub="${esc(x.id)}"><span class="sday num">${x.day}.</span><span class="mid"><b>${esc(x.name)}</b><span>${st.txt}</span></span><span class="amt num">${eur(x.amount)}</span></button>`});
+    h+=`</div></section>`}
+  h+=`<div class="kpis">
+   <div class="kpi"><div class="lbl">Planirani rashodi</div><b class="num">${eur(c.plan)}</b><small class="num">višak po planu: ${eur(c.inc-c.plan)}</small></div>
+   <div class="kpi"><div class="lbl">Stopa investiranja</div><b class="num">${pct(c.invRate)}</b><small>ETF + zlato / prihodi</small></div></div>`;
+  // donut
+  let acc=0,seg="",leg="";
+  Object.values(CATS).forEach(cat=>{const b=c.cats[cat.id].b;if(!b||!c.plan)return;const p=b/c.plan*100;
+    seg+=`<circle r="15.915" cx="21" cy="21" fill="none" stroke="var(${cat.group.color})" stroke-opacity="${cat.shade}" stroke-width="6" stroke-dasharray="${Math.max(p-.5,0)} ${100-Math.max(p-.5,0)}" stroke-dashoffset="${25-acc}"/>`;acc+=p;
+    leg+=`<div><span class="dot" style="background:var(${cat.group.color});opacity:${cat.shade}"></span><span>${cat.name}</span><span class="num">${pct(b/c.plan)}</span></div>`});
+  h+=`<section class="card"><h2 class="sec-title">Raspodela budžeta</h2>${c.plan?`<div class="donut-wrap">
+   <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="Raspodela planiranog budžeta po kategorijama">${seg}
+   <text x="21" y="20" text-anchor="middle" font-size="3.2" fill="currentColor" style="fill:var(--muted)">plan</text>
+   <text x="21" y="24.6" text-anchor="middle" font-size="4.2" font-weight="800" style="fill:var(--ink)">${nf.format(Math.round(c.plan))}€</text></svg>
+   <div class="legend">${leg}</div></div>`:`<p class="note">Unesi iznose u Planu da vidiš raspodelu.</p>`}</section>`;
+  // groups
+  GROUPS.forEach(G=>{const gg=c.g[G.id];
+    h+=`<section class="group" style="--gc:var(${G.color})"><div class="ghead"><h3>${G.name}</h3><span class="num">${eur(gg.s)} / ${eur(gg.b)}</span></div>`;
+    G.cats.forEach(([id,name])=>{const {b,s}=c.cats[id];const[st,cls]=status(b,s);const r=b?s/b:(s?1:0);
+      const col=cls==="bad"?"var(--bad)":cls==="warn"?"var(--warn)":`var(${G.color})`;
+      h+=`<div class="crow"><div class="crow-top"><span class="crow-name">${name}</span><span class="crow-amt num"><b>${eur(s)}</b> / ${eur(b)}</span></div>
+       <div class="bar"><i style="width:${Math.min(r,1)*100}%;background:${col}"></i></div>
+       <div class="crow-foot num"><span>Preostalo ${eur(b-s)} · ${pct(c.plan?b/c.plan:0)} budžeta</span><span class="pill ${cls}">${st}</span></div></div>`});
+    h+=`</section>`});
+  // 50/30/20
+  h+=`<section class="card"><h2 class="sec-title">Pravilo 50 / 30 / 20</h2><div class="tbl-wrap"><table class="num"><thead><tr><th>Grupa</th><th>Prep.</th><th>Plan</th><th>Potroš.</th><th>Razlika</th></tr></thead><tbody>`;
+  GROUPS.forEach(G=>{const p=c.inc?c.g[G.id].b/c.inc:0,d=p-G.rec;const bad=G.id==="invest"?d<0:d>0;
+    h+=`<tr><td style="color:var(${G.color});font-weight:700">${G.rule}</td><td>${pct(G.rec)}</td><td>${pct(p)}</td><td>${pct(c.inc?c.g[G.id].s/c.inc:0)}</td><td class="${bad?"pos":"neg"}">${d>0?"+":""}${pct(d)}</td></tr>`});
+  h+=`<tr><td style="font-weight:700">Keš</td><td>–</td><td>${pct(c.inc?(c.inc-c.plan)/c.inc:0)}</td><td></td><td></td></tr></tbody></table></div>
+  <p class="note">Kod potreba i želja je bolje biti ispod preporuke, kod štednje iznad.</p></section>`;
+  // cash
+  h+=`<section class="card"><h2 class="sec-title">Keš rezerva</h2>
+   <div class="kv"><span>Keš ovog meseca</span><b class="num">${eur(c.kes)}</b></div>
+   <div class="kv"><span>Preneto iz prethodnog meseca</span><b class="num">${eur(c.carry)}</b></div>
+   <div class="kv total"><span>Ukupno keš</span><b class="num">${eur(c.ukupnoKes)}</b></div>
+   <div class="kv"><span>Pokriva osnovne troškove</span><b class="num">${pf.format(c.pokriva)} meseci</b></div>
+   <div class="kv"><span>Ukupna štednja (investicije + keš)</span><b class="num">${pct(c.stednja)}</b></div>
+   <p class="note">Keš = prihod − veće od (plan, stvarno potrošeno). Ako prekoračiš budžet, keš se smanjuje.</p></section>`;
+  return h;
+}
+function txSeg(){return `<div class="seg" role="tablist"><button type="button" role="tab" data-txv="troskovi" aria-selected="${txView==="troskovi"}">Troškovi</button><button type="button" role="tab" data-txv="namirnice" aria-selected="${txView==="namirnice"}">Namirnice</button></div>`}
+function viewTx(c){
+  if(txView==="namirnice")return txSeg()+viewGroceries();
+  const list=txs.filter(t=>t.month===cur).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  let h=txSeg()+`<div class="tx-head"><h2 class="sec-title" style="margin:0">Troškovi</h2><b class="num">${eur(c.spent)}</b></div>`;
+  if(scanReady())h+=`<button class="btn scan" type="button" data-scan="1">${CAM}Skeniraj QR kod računa</button>`;
+  if(!list.length)return h+`<div class="txlist"><div class="empty"><b>Još nema troškova za ${MONTHS[+cur.slice(5)-1]}</b>Dodaj prvi dugmetom + dole.</div></div>`;
+  h+=`<div class="copybox"><button class="btn ghost" id="copyTx" type="button">Kopiraj za Google tabelu (${list.length})</button>
+   <p class="note" style="margin:6px 2px 0">U listu TRANSAKCIJE ${MONTHS[+cur.slice(5)-1].toUpperCase()} klikni prvu praznu ćeliju ispod DATUM i nalepi (Ctrl+V).</p>
+   <textarea id="copyArea" class="copyarea" readonly hidden aria-label="Troškovi za kopiranje"></textarea></div>`;
+  let day="";h+="<div>";
+  list.forEach(t=>{if(t.date!==day){if(day)h+="</div>";day=t.date;const d=new Date(t.date+"T12:00");h+=`<div class="day">${DAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}</div><div class="txlist">`}
+    const cat=CATS[t.cat];const G=cat?cat.group:{color:"--muted"};const ac=accounts.find(a=>a.id===t.account);
+    const subl=[t.desc||"Bez opisa",ac?ac.name:""].filter(Boolean).join(" · ");
+    h+=`<button class="tx" data-tx="${esc(t.id)}" style="--gc:var(${G.color})"><span class="ic">${esc((cat?cat.name:"?").slice(0,2).toUpperCase())}</span><span class="mid"><b>${esc(cat?cat.name:t.cat)}</b><span>${esc(subl)}</span></span><span class="amt num">−${eur(t.amount)}</span></button>`});
+  return h+"</div></div>";
+}
+function viewPlan(c){
+  const m=c.m;
+  let h=`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
+   <div class="field"><label for="p_income">Mesečni prihod</label><span class="money"><input id="p_income" inputmode="decimal" value="${nf.format(m.income||0)}"><span>€</span></span></div>
+   <div class="field"><label for="p_carry">Preneto iz prethodnog meseca<small>Prazno = automatski (${eur(c.autoCarry?c.carry:0)})</small></label><span class="money"><input id="p_carry" inputmode="decimal" placeholder="auto" value="${typeof m.carry==="number"?nf.format(m.carry):""}"><span>€</span></span></div></section>`;
+  GROUPS.forEach(G=>{h+=`<section class="card" style="border-left:5px solid var(${G.color})"><h2 class="sec-title" style="color:var(${G.color})">${G.name}</h2>`;
+    G.cats.forEach(([id,name])=>{
+      const lab=LISTS[id]?subsToggle(id,name):`<label for="b_${id}">${name}</label>`;
+      h+=`<div class="field">${lab}<span class="money"><input id="b_${id}" data-cat="${id}" inputmode="decimal" value="${nf.format((m.budgets||{})[id]||0)}"><span>€</span></span></div>`;
+      if(LISTS[id]&&subsOpen[id])h+=subsBlock(id,(m.budgets||{})[id]||0)});
+    h+=`</section>`});
+  h+=`<div class="err" id="planErr"></div><button class="btn primary" id="savePlan">Sačuvaj plan za ${MONTHS[+cur.slice(5)-1]}</button>`;
+  if(!m._exists)h+=`<p class="note">Ovaj mesec još nema svoj plan, pa su iznosi preuzeti iz najbližeg meseca. Sačuvaj da ga zaključaš.</p>`;
+  return h+settingsCard();
+}
+/* ---------- subscriptions ---------- */
+const dim=(y,m)=>new Date(y,m+1,0).getDate();
+function subDue(day){
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
+  const thisC=Math.min(day,dim(y,m));
+  if(thisC>=d)return{days:thisC-d,charged:false,date:new Date(y,m,thisC)};
+  const ny=m===11?y+1:y,nm=(m+1)%12,nextC=Math.min(day,dim(ny,nm));
+  return{days:dim(y,m)-d+nextC,charged:true,chargedDay:thisC,date:new Date(ny,nm,nextC)};
+}
+function subState(s){const u=subDue(s.day),bill=(s.cat||"pretplate")==="racuni";
+  if(u.days===0)return{cls:"s-now",txt:bill?"Dospeva danas":"Naplaćuje se danas"};
+  if(u.days<=3)return{cls:"s-3",txt:u.days===1?"Sutra":"Za "+u.days+" dana"};
+  if(u.days<=7)return{cls:"s-7",txt:"Za "+u.days+" dana"};
+  if(u.charged)return{cls:"s-done",txt:(bill?"Dospelo ":"Naplaćeno ")+u.chargedDay+". · sledeći put za "+u.days+" dana"};
+  if(u.days<=14)return{cls:"s-14",txt:"Za "+u.days+" dana"};
+  return{cls:"s-far",txt:"Za "+u.days+" dana"};
+}
+const LISTS={
+  pretplate:{title:"Pojedinačne pretplate",one:"pretplata",few:"pretplate",many:"pretplata",add:"+ Dodaj pretplatu",empty:"Dodaj pretplate (Netflix, Spotify, iCloud…) sa danom naplate da vidiš šta se uskoro naplaćuje.",
+    newT:"Nova pretplata",editT:"Izmeni pretplatu",ph:"npr. Netflix",saveNew:"Dodaj pretplatu",del:"Obriši pretplatu",tDel:"Pretplata obrisana",tSave:"Pretplata sačuvana",tAdd:"Pretplata dodata",dayL:"Dan naplate u mesecu (1–31)",nameErr:"Upiši naziv pretplate."},
+  racuni:{title:"Pojedinačni računi",one:"račun",few:"računa",many:"računa",add:"+ Dodaj račun",empty:"Dodaj račune (struja, internet, voda, telefon…) sa danom kada dospevaju na plaćanje.",
+    newT:"Novi račun za plaćanje",editT:"Izmeni račun",ph:"npr. Struja, Internet, Voda",saveNew:"Dodaj račun",del:"Obriši račun",tDel:"Račun obrisan",tSave:"Račun sačuvan",tAdd:"Račun dodat",dayL:"Dan dospeća u mesecu (1–31)",nameErr:"Upiši naziv računa."}};
+const subCat=x=>x.cat||"pretplate";
+const listFor=cat=>subs.filter(x=>subCat(x)===cat);
+const subsOpen={pretplate:false,racuni:false};
+function subsToggle(cat,name){
+  const L_=LISTS[cat],arr=listFor(cat),n_=arr.length;
+  let info=n_?n_+" "+(n_===1?L_.one:(n_%10>=2&&n_%10<=4&&(n_%100<10||n_%100>20))?L_.few:L_.many):(cat==="racuni"?"Dodaj račune":"Dodaj pretplate");
+  let cls="";
+  if(n_){const n=arr.map(x=>({x,u:subDue(x.day)})).sort((a,b)=>a.u.days-b.u.days)[0];cls=subState(n.x).cls;
+    info+=" · sledeći: "+esc(n.x.name)+" "+(n.u.days===0?"danas":n.u.days===1?"sutra":"za "+n.u.days+" dana")}
+  if(cat==="pretplate")info=info.replace("sledeći:","sledeća:");
+  return `<button type="button" class="subs-tg ${cls}" data-subtg="${cat}" aria-expanded="${subsOpen[cat]}" aria-controls="subs_${cat}"><span class="tg-name">${name}<span class="chev" aria-hidden="true">›</span></span><small>${info}</small></button>`}
+let subSort=true;try{subSort=localStorage.getItem("budzet-subsort")!=="0"}catch(e){}
+function subsSorted(arr){return arr.slice().sort(subSort?((a,b)=>a.day-b.day||a.name.localeCompare(b.name)):((a,b)=>(a.created||0)-(b.created||0)))}
+function subsBlock(cat,budget){
+  const L_=LISTS[cat],arr=listFor(cat),total=arr.reduce((s,x)=>s+(+x.amount||0),0);
+  let h=`<div class="subs" id="subs_${cat}"><div class="subs-head"><span class="lbl">${L_.title}</span><label class="mini-sw"><input type="checkbox" class="subSort" ${subSort?"checked":""}> Po datumu</label></div>`;
+  if(!arr.length)h+=`<p class="note" style="margin:4px 0 10px">${L_.empty}</p>`;
+  else{h+=`<div class="sublist">`;subsSorted(arr).forEach(s=>{const st=subState(s);
+    h+=`<button type="button" class="srow ${st.cls}" data-sub="${esc(s.id)}"><span class="sday num">${s.day}.</span><span class="mid"><b>${esc(s.name)}</b><span>${st.txt}</span></span><span class="amt num">${eur(s.amount)}</span></button>`});
+    const dv=planDirtyKey===cur&&planDirty["b_"+cat]!==undefined?parseNum(planDirty["b_"+cat]):NaN,bud=isNaN(dv)?budget:dv,same=Math.abs(total-bud)<.005;
+    h+=`</div><div class="subs-sum num"><span>Zbir: <b>${eur(total)}</b> · budžet ${eur(bud)}${same?' <span class="okmark">✓ jednako</span>':""}</span><button type="button" class="linkbtn" data-tobudget="${cat}">Postavi budžet na zbir</button></div>`}
+  return h+`<button type="button" class="btn ghost" data-addsub="${cat}" style="padding:10px;font-size:14px">${L_.add}</button></div>`;
+}
+function openSubSheet(s,cat){
+  const edit=!!s;cat=s?subCat(s):cat;const L_=LISTS[cat];
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="subForm" role="dialog" aria-label="${edit?L_.editT:L_.newT}">
+   <div class="grab"></div><h2>${edit?L_.editT:L_.newT}</h2>
+   <div class="amt-in"><input id="s_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${s?nf.format(s.amount):""}"><span>€</span></div>
+   <div class="inrow"><label class="lbl" for="s_name">Naziv</label><input id="s_name" maxlength="40" placeholder="${L_.ph}" value="${esc(s?s.name:"")}"></div>
+   <div class="inrow"><label class="lbl" for="s_day">${L_.dayL}</label><input id="s_day" type="number" inputmode="numeric" min="1" max="31" placeholder="npr. 15" value="${s?s.day:""}"></div>
+   <p class="note" style="margin:-4px 0 10px">Ako mesec nema taj dan (npr. 31.), računa se poslednji dan meseca.${cat==="racuni"?" Ako se iznos menja iz meseca u mesec, upiši prosečan.":""}</p>
+   <div class="err" id="s_err"></div>
+   <div class="actions"><button class="btn primary" type="submit">${edit?"Sačuvaj":L_.saveNew}</button>
+   ${edit?`<button class="btn danger" type="button" id="s_del">${L_.del}</button>`:""}
+   <button class="btn ghost" type="button" id="s_cancel">Otkaži</button></div></form></div>`;
+  const close=()=>$("#layer").innerHTML="";
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};$("#s_cancel").onclick=close;
+  if(!edit)setTimeout(()=>$("#s_name").focus(),60);
+  if(edit){let armed=false;$("#s_del").onclick=async()=>{
+    if(!armed){armed=true;$("#s_del").textContent="Dodirni ponovo za brisanje";return}
+    try{await store.del("subs",s.id);close();toast(L_.tDel)}catch(e){$("#s_err").textContent=errMsg(e)}}}
+  $("#subForm").onsubmit=async e=>{e.preventDefault();
+    const amt=parseNum($("#s_amt").value),name=$("#s_name").value.trim().slice(0,40),day=parseInt($("#s_day").value,10);
+    if(isNaN(amt)||amt<0){$("#s_err").textContent="Unesi iznos, npr. 12,99.";return}
+    if(!name){$("#s_err").textContent=L_.nameErr;return}
+    if(!(day>=1&&day<=31)){$("#s_err").textContent="Dan mora biti od 1 do 31.";return}
+    const rec={...(s||{id:newId("s"),created:Date.now()}),cat,name,day,amount:Math.round(amt*100)/100};
+    try{await store.set("subs",rec);close();toast(edit?L_.tSave:L_.tAdd)}catch(err){$("#s_err").textContent=errMsg(err)}};
+}
+
+let planDirty={},planDirtyKey="";
+function bindPlan(){
+  bindSettings();
+  if(planDirtyKey!==cur){planDirty={};planDirtyKey=cur}
+  Object.entries(planDirty).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v});
+  document.querySelectorAll("#p_income,#p_carry,[data-cat]").forEach(el=>el.addEventListener("input",()=>{planDirty[el.id]=el.value}));
+  document.querySelectorAll("[data-subtg]").forEach(b=>b.onclick=()=>{const c=b.dataset.subtg;subsOpen[c]=!subsOpen[c];render()});
+  document.querySelectorAll(".subSort").forEach(i=>i.onchange=e=>{subSort=e.target.checked;try{localStorage.setItem("budzet-subsort",subSort?"1":"0")}catch(_){}render()});
+  document.querySelectorAll("[data-addsub]").forEach(b=>b.onclick=()=>openSubSheet(null,b.dataset.addsub));
+  document.querySelectorAll("[data-tobudget]").forEach(b=>b.onclick=()=>{const c=b.dataset.tobudget,v=nf.format(listFor(c).reduce((s,x)=>s+(+x.amount||0),0));planDirty["b_"+c]=v;render();toast("Iznos upisan, klikni Sačuvaj plan")});
+  $("#savePlan").onclick=async()=>{
+    const inc=parseNum($("#p_income").value),cs=$("#p_carry").value.trim(),carry=cs?parseNum(cs):null;
+    const budgets={};let bad=isNaN(inc)||(cs&&isNaN(carry));
+    document.querySelectorAll("[data-cat]").forEach(i=>{const v=parseNum(i.value);if(isNaN(v)||v<0)bad=true;budgets[i.dataset.cat]=Math.round(v*100)/100});
+    if(bad){$("#planErr").textContent="Proveri iznose: koristi samo brojeve, npr. 480,60.";return}
+    try{await store.setMonth(cur,{income:Math.round(inc*100)/100,carry:carry===null?null:Math.round(carry*100)/100,budgets});planDirty={};toast("Plan sačuvan")}
+    catch(e){$("#planErr").textContent=errMsg(e)}
+  };
+}
+
+/* ---------- accounts ---------- */
+function accRow(a){const T=ATYPES[a.type]||ATYPES.ostalo;const b=accBal(a);
+  return `<button class="acc ${a.include?"":"out"}" data-acc="${esc(a.id)}" style="--gc:var(${T.color})" type="button"><span class="ic">${T.ic}</span><span class="mid"><b>${esc(a.name)}</b><span>${T.name}</span></span><span class="amt num" style="${b<0?"color:var(--bad)":""}">${eur(b)}</span></button>`}
+function viewAccounts(){
+  const T=accTotals(),list=accSorted(),inL=list.filter(a=>a.include),outL=list.filter(a=>!a.include);
+  let h=`<section class="hero"><div class="lbl">Raspoloživo za budžet</div>
+   <div class="big num" style="color:${T.inB<0?"var(--bad)":"var(--ink)"}">${eur(T.inB)}</div>
+   <div class="sub num">Van budžeta ${eur(T.outB)} · ukupno ${eur(T.all)}</div></section>`;
+  if(!list.length)return h+`<div class="txlist"><div class="empty"><b>Još nemaš nijedan račun</b>Dodaj karticu, keš, štednju ili investicije i upiši trenutno stanje.</div></div>
+   <button class="btn primary" id="addAcc" type="button">Dodaj račun</button>`;
+  if(inL.length)h+=`<div><div class="sub-h"><h3>U budžetu</h3><b class="num">${eur(T.inB)}</b></div><div class="acc-list">${inL.map(accRow).join("")}</div></div>`;
+  if(outL.length)h+=`<div><div class="sub-h"><h3>Van budžeta</h3><b class="num" style="color:var(--muted)">${eur(T.outB)}</b></div><div class="acc-list">${outL.map(accRow).join("")}</div></div>`;
+  h+=`<div class="row2"><button class="btn primary" id="addAcc" type="button">Novi račun</button><button class="btn ghost" id="addTr" type="button"${list.length<2?" disabled":""}>Prenos</button></div>`;
+  const recent=transfers.slice().sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,8);
+  if(recent.length){h+=`<div><div class="sub-h"><h3>Poslednji prenosi</h3></div><div class="txlist">`;
+    recent.forEach(r=>{const f=accounts.find(a=>a.id===r.from),t=accounts.find(a=>a.id===r.to);const d=new Date((r.date||todayISO())+"T12:00");
+      h+=`<button class="tx" data-tr="${esc(r.id)}" style="--gc:var(--muted)" type="button"><span class="ic">⇄</span><span class="mid"><b>${esc(f?f.name:"?")} → ${esc(t?t.name:"?")}</b><span>${d.getDate()}. ${MONTHS[d.getMonth()]}${r.desc?" · "+esc(r.desc):""}</span></span><span class="amt num">${eur(r.amount)}</span></button>`});
+    h+=`</div></div>`}
+  h+=`<p class="note">Stanje računa = upisano stanje − troškovi plaćeni sa tog računa ± prenosi. Računi van budžeta (npr. investicije) ne ulaze u „Raspoloživo za budžet“.</p>`;
+  return h;
+}
+function openAccountSheet(a){
+  const edit=!!a;let type=a?a.type:"kartica";
+  const typeChips=Object.entries(ATYPES).map(([k,T])=>`<button type="button" class="chip" data-t="${k}" style="--gc:var(${T.color==="--muted"?"--head":T.color})" aria-pressed="${k===type}">${T.name}</button>`).join("");
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="accForm" role="dialog" aria-label="${edit?"Izmeni račun":"Novi račun"}">
+   <div class="grab"></div><h2>${edit?"Izmeni račun":"Novi račun"}</h2>
+   <div class="inrow"><label class="lbl" for="a_name">Naziv</label><input id="a_name" maxlength="40" placeholder="npr. Visa kartica, Novčanik, Štednja" value="${esc(a?a.name:"")}"></div>
+   <div class="lbl" style="margin-bottom:8px">Vrsta</div><div class="chips">${typeChips}</div>
+   <div class="inrow"><label class="lbl" for="a_bal">Trenutno stanje (€)</label><input id="a_bal" inputmode="decimal" placeholder="0,00" value="${a?nf.format(accBal(a)):""}"></div>
+   <label class="switch" for="a_inc"><span><b>Uračunaj u budžet</b><small>Uključeno: novac se vodi kao raspoloživ za mesečno trošenje</small></span><input type="checkbox" id="a_inc" ${(a?a.include:ATYPES[type].inc)?"checked":""}></label>
+   <div class="err" id="a_err"></div>
+   <div class="actions"><button class="btn primary" type="submit">${edit?"Sačuvaj":"Dodaj račun"}</button>
+   ${edit?`<button class="btn danger" type="button" id="a_del">Obriši račun</button>`:""}
+   <button class="btn ghost" type="button" id="a_cancel">Otkaži</button></div></form></div>`;
+  const close=()=>$("#layer").innerHTML="";
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};$("#a_cancel").onclick=close;
+  let incTouched=false;$("#a_inc").onchange=()=>incTouched=true;
+  document.querySelectorAll("#accForm .chip").forEach(b=>b.onclick=()=>{type=b.dataset.t;document.querySelectorAll("#accForm .chip").forEach(x=>x.setAttribute("aria-pressed",x===b));if(!edit&&!incTouched)$("#a_inc").checked=ATYPES[type].inc});
+  if(edit){let armed=false;$("#a_del").onclick=async()=>{
+    if(!armed){armed=true;$("#a_del").textContent="Dodirni ponovo za brisanje";return}
+    try{await store.del("accounts",a.id);close();toast("Račun obrisan")}catch(e){$("#a_err").textContent=errMsg(e)}}}
+  $("#accForm").onsubmit=async e=>{e.preventDefault();
+    const name=$("#a_name").value.trim().slice(0,40),bs=$("#a_bal").value.trim(),bal=bs?parseNum(bs):0;
+    if(!name){$("#a_err").textContent="Upiši naziv računa.";return}
+    if(isNaN(bal)){$("#a_err").textContent="Stanje upiši kao broj, npr. 1.250,00 ili -300.";return}
+    const rec=a?{...a}:{id:newId("a"),created:Date.now(),order:accounts.length,opening:0,setAt:Date.now()};
+    rec.name=name;rec.type=type;rec.include=$("#a_inc").checked;
+    const nb=Math.round(bal*100)/100;if(!a||nb!==accBal(a)){rec.opening=nb;rec.setAt=Date.now()}
+    try{await store.set("accounts",rec);close();toast(edit?"Račun sačuvan":"Račun dodat")}catch(err){$("#a_err").textContent=errMsg(err)}};
+}
+function accOptions(sel,blank){return (blank?`<option value="">— bez računa —</option>`:"")+accSorted().map(a=>`<option value="${esc(a.id)}"${a.id===sel?" selected":""}>${esc(a.name)} (${eur(accBal(a))})</option>`).join("")}
+function openTransferSheet(r){
+  const edit=!!r;const list=accSorted();
+  const from=r?r.from:(list.find(a=>a.include)||list[0]).id,to=r?r.to:(list.find(a=>a.id!==from)||list[0]).id;
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="trForm" role="dialog" aria-label="Prenos između računa">
+   <div class="grab"></div><h2>${edit?"Prenos":"Prenos između računa"}</h2>
+   <div class="amt-in"><input id="r_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${r?nf.format(r.amount):""}"${edit?" readonly":""}><span>€</span></div>
+   <div class="inrow"><label class="lbl" for="r_from">Sa računa</label><select id="r_from"${edit?" disabled":""}>${accOptions(from)}</select></div>
+   <div class="inrow"><label class="lbl" for="r_to">Na račun</label><select id="r_to"${edit?" disabled":""}>${accOptions(to)}</select></div>
+   <div class="inrow"><label class="lbl" for="r_desc">Opis</label><input id="r_desc" maxlength="60" placeholder="npr. uplata za ETF" value="${esc(r?r.desc:"")}"${edit?" readonly":""}></div>
+   <div class="err" id="r_err"></div>
+   <div class="actions">${edit?`<button class="btn danger" type="button" id="r_del">Obriši prenos</button>`:`<button class="btn primary" type="submit">Prenesi</button>`}
+   <button class="btn ghost" type="button" id="r_cancel">${edit?"Zatvori":"Otkaži"}</button></div></form></div>`;
+  const close=()=>$("#layer").innerHTML="";
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};$("#r_cancel").onclick=close;
+  if(edit){let armed=false;$("#r_del").onclick=async()=>{
+    if(!armed){armed=true;$("#r_del").textContent="Dodirni ponovo za brisanje";return}
+    try{await store.del("transfers",r.id);close();toast("Prenos obrisan")}catch(e){$("#r_err").textContent=errMsg(e)}};return}
+  setTimeout(()=>$("#r_amt").focus(),60);
+  $("#trForm").onsubmit=async e=>{e.preventDefault();
+    const amt=parseNum($("#r_amt").value),f=$("#r_from").value,t=$("#r_to").value;
+    if(isNaN(amt)||amt<=0){$("#r_err").textContent="Unesi iznos veći od nule.";return}
+    if(f===t){$("#r_err").textContent="Izaberi dva različita računa.";return}
+    const rec={id:newId("r"),from:f,to:t,amount:Math.round(amt*100)/100,desc:$("#r_desc").value.trim().slice(0,60),date:todayISO(),created:Date.now()};
+    try{await store.set("transfers",rec);close();toast("Prenos sačuvan")}catch(err){$("#r_err").textContent=errMsg(err)}};
+}
+
+/* ---------- receipts (scan) ---------- */
+const GSUB={
+  voce:["Voće i povrće","hrana"],meso:["Meso i riba","hrana"],suho:["Suhomesnato","hrana"],mlecni:["Mlečni proizvodi i jaja","hrana"],
+  pekara:["Hleb i pekara","hrana"],osnovne:["Osnovne namirnice","hrana"],smrznuto:["Smrznuto","hrana"],gotova:["Gotova jela","hrana"],
+  slatkisi:["Slatkiši i grickalice","hrana"],pice:["Sokovi i voda","hrana"],kafa:["Kafa i čaj","hrana"],alkohol:["Alkohol","hrana"],
+  higijena:["Higijena i kozmetika","razno"],kuca:["Kuća i hemija","razno"],ljubimci:["Kućni ljubimci","razno"],
+  cigare:["Cigare i duvan","cigare"],ostalo:["Ostalo","razno"]};
+const subName=k=>(GSUB[k]||GSUB.ostalo)[0], subBudget=k=>(GSUB[k]||GSUB.ostalo)[1];
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/đ/g,"dj");
+let receipts=[],txView="troskovi",draft=null,scanStream=null,scanTimer=null,ruleMap={};
+const scanReady=()=>true;
+const KW_RAW=[
+ ["cigare",["cigaret","marlboro","l&m","camel","winston","chesterfield","pall mall","lucky strike","davidoff","tabak","iqos","heets","terea","viceroy","parliament","sparta"]],
+ ["alkohol",["pivo","piva","leziak","radler","vino ","vino,","sekt","prosecco","vodka"," rum ","gin ","whisk","borovick","slivovic","hruskovic","jagermeister","liker","becherovka","tatratea","pilsner","zlaty bazant","smadny mnich","corgon","kozel","staropramen","heineken","budvar","saris","topvar","cider"]],
+ ["kafa",["kava","kavy","cafe","coffee","espresso","nescafe","jacobs","tchibo","lavazza","caj ","caj,","tea ","teekanne","pickwick","kapsul"]],
+ ["ljubimci",["krmivo","granule","pre psa","pre macky","whiskas","pedigree","felix","friskies","stelivo"]],
+ ["kuca",["praci","avivaz","jar ","pur ","cistiac","savo","domestos","wc ","do umyvac","finish","calgon","ariel","persil","lenor","hubk","handra","vrecia na","vrecka na","alobal","folia","papierove utier","kuchynsk","sviec","baterie","ziarov","zapalov","osviezovac"]],
+ ["higijena",["sampon","mydl","sprchov","gel ","zubn","kefka","dezodor","antiperspir","toaletn","papier","vreckov","servitk","obrusk","plienk","vlozk","tampon","krem","pletov","holiaci","ziletk","vatov","kozmet","colgate","nivea","dove","gillette","rexona","old spice","vlhc"]],
+ ["ostalo",["zaloha","vratn","taska","igelit"]],
+ ["suho",["sunk","salam","klobas","parky","slanin","anglick","pastet","spekacik","mortadel","prosciutto","chorizo","debrecin"]],
+ ["meso",["kurac","kurca","kura ","morcac","bravc","hovadz","teleci","mlete","rezen","stehn","krkovic","kare ","pecen","losos","tuniak","ryba","ryby","file ","krevet","pstruh","kapor","treska","maso"]],
+ ["mlecni",["mlieko","mliek","jogurt","kefir","acidko","syr ","syr,","syry","eidam","gouda","mozzarell","parmez","cottage","tvaroh","smotan","maslo","bryndz","parenic","ostiepok","niva","hermelin","vajc","vajec","skyr","zakys","puding","natierk","lucina","ricotta","mascarpone","feta","cheddar","emental"]],
+ ["smrznuto",["mrazen","mraz.","zmrzlin","nanuk","frozen","hranolk","pizza"]],
+ ["slatkisi",["cokol","milka","orion","kinder","snicker","twix","mars ","bounty","kitkat","kit kat","haribo","cukrik","zuvack","keks","susienk","oblatk","horalk","tatranky","chips","cips","pringles","lays","tycink","arasid","oriesk","popcorn","krekr","slane ","torta","dezert","muffin","donut"]],
+ ["pice",["voda","mineral","rajec","budis","mattoni","dzus","juice","nektar","limonad","kofola","coca","cola","pepsi","fanta","sprite","7up","ice tea","nestea","sirup","energy","red bull","monster","tonic","smoothie"]],
+ ["pekara",["chlieb","chleb","rozok","bageta","pecivo","toast","kaiserk","croissant","lupak","buchta","kolac","vianock","zeml","bagel","tortill","pita "]],
+ ["gotova",["hotov","sendvic","wrap","sushi","lasagn","halusk","pirohy","knedl"]],
+ ["osnovne",["muka","cukor","sol ","olej","ocot","cestovin","spaget","penne","fusilli","makaron","rezance","ryza","kuskus","bulgur","ovsen","vlocky","musli","cornflakes","kecup","horcic","majonez","tatarsk","omack","korenie","konzerv","pretlak","polievk","bujon","med ","dzem","lekvar","nutella","drozdie","kvasnic","prasok do","vanilk","struhank"]],
+ ["voce",["jablk","hrusk","banan","pomaran","mandarin","citron","limet","hrozn","jahod","malin","cucoried","broskyn","marhul","slivk","melon","ananas","kiwi","avokad","mango","granatov","zemiak","cibul","cesnak","mrkv","petrzl","zeler","paradajk","rajcin","uhork","paprik","salat","kapust","karfiol","brokolic","cuket","baklazan","spenat","redkov","hrach","fazul","sosovic","hrib","sampin","zelenin","ovoc","bylink","rukol","polnick","kukuric","dyna","tekvic"]]];
+const KW=KW_RAW.map(([k,ws])=>[k,ws.map(w=>norm(w))]);
+const hashKey=s=>{let h=5381;for(const ch of s)h=((h*33)^ch.charCodeAt(0))>>>0;return "k"+h.toString(36)+"_"+s.replace(/[^a-z0-9]/g,"").slice(0,24)};
+function guessSub(name){const n=" "+norm(name).replace(/\s+/g," ")+" ";
+  const learned=ruleMap[norm(name).trim()];if(learned&&GSUB[learned])return learned;
+  for(const [k,ws] of KW)if(ws.some(w=>n.includes(w)))return k;return "ostalo"}
+function shortStore(org,unit){const s=((org||"")+" "+(unit||"")).toUpperCase();
+  const chains=[["LIDL","Lidl"],["KAUFLAND","Kaufland"],["TESCO","Tesco"],["BILLA","Billa"],["JEDNOTA","COOP Jednota"],["COOP","COOP Jednota"],["FRESH","Fresh"],["TERNO","Terno"],["KRAJ","Kraj"],["DM DROGERIE","dm"],["ROSSMANN","Rossmann"],["TETA","Teta"],["METRO","Metro"],["SLOVNAFT","Slovnaft"],["OMV","OMV"],["SHELL","Shell"],["MOL ","MOL"],["LABAŠ","Labaš"],["ALDI","Aldi"],["PENNY","Penny"],["IKEA","IKEA"],["DECATHLON","Decathlon"],["MCDONALD","McDonald's"],["KFC","KFC"]];
+  for(const [k,v] of chains)if(s.includes(k))return v;
+  const base=(unit&&unit.name)||org||"Prodavnica";return String(base).replace(/\b(s\.?\s?r\.?\s?o\.?|a\.?\s?s\.?|spol\.)\b/gi,"").replace(/[,\s]+$/,"").trim().slice(0,30)||"Prodavnica"}
+function parseEkDate(s){if(!s)return todayISO();let m=String(s).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);if(m)return m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
+  m=String(s).match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[0]:todayISO()}
+function parseEkasa(j){
+  const r=j&&(j.receipt||(j.data&&j.data.receipt)||(Array.isArray(j.items)?j:null));
+  if(!r)throw{code:"not_found"};
+  const items=[];
+  (r.items||[]).forEach(it=>{const name=String(it.name||"").trim(),price=Math.round((+it.price||0)*100)/100,type=String(it.itemType||"K").toUpperCase(),qty=+it.quantity||1;
+    if((type==="Z"||type==="ZLAVA"||price<0&&/zlav|zľav|zlava|zlava|discount|akcia/i.test(name))&&items.length){const last=items[items.length-1];last.price=Math.round((last.price+price)*100)/100;return}
+    const sub=type==="VO"||type==="O"?"ostalo":guessSub(name);
+    items.push({raw:name,name:name.slice(0,60),qty,price,sub,auto:sub})});
+  const org=r.organization&&r.organization.name,unit=r.unit||null;
+  return {store:shortStore(org,unit),date:parseEkDate(r.issueDate||r.createDate),total:typeof r.totalPrice==="number"?Math.round(r.totalPrice*100)/100:null,items,
+    account:accounts.some(a=>a.id===lastAcc)?lastAcc:"",ekasaId:r.receiptId||""};
+}
+const EKASA_DIRECT="https://ekasa.financnasprava.sk/mdu/api/v1/opd/receipt/find";
+async function fetchReceipt(id){
+  const url=(CONFIG.ekasaProxy||"").trim()||EKASA_DIRECT;let res;
+  try{res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({receiptId:id})})}
+  catch(e){throw{code:CONFIG.ekasaProxy?"network":"cors"}}
+  if(res.status===429)throw{code:"rate"};
+  if(!res.ok)throw{code:res.status===404?"not_found":"http",status:res.status};
+  let j;try{j=await res.json()}catch(e){throw{code:"bad"}}
+  return parseEkasa(j);
+}
+function ekErr(e){const c=e&&e.code;
+  if(c==="cors")return"Aplikacija ne može direktno do eKasa servera. Podesi Cloudflare Worker (korak 5 u uputstvu) i upiši njegovu adresu u CONFIG.";
+  if(c==="network")return"Nema veze sa eKasa serverom. Proveri internet i adresu Worker-a.";
+  if(c==="rate")return"eKasa server trenutno odbija previše zahteva. Sačekaj minut pa probaj ponovo.";
+  if(c==="not_found")return"Doklad nije pronađen u eKasa sistemu. Ako je izdat offline, pojaviće se kasnije; probaj ponovo za par sati.";
+  if(c==="offline")return"Ovo je QR kod offline dokladu (bez ID broja). Takav doklad eKasa pronađe tek kad ga kasa pošalje; probaj kasnije ili unesi ID ručno.";
+  if(c==="noqr")return"Na slici nije pronađen QR kod. Slikaj ga bliže i oštrije.";
+  return"Doklad nije učitan. Pokušaj ponovo.";}
+function extractId(txt){const m=String(txt||"").match(/O-[0-9A-F]{32}/i);if(m)return m[0].toUpperCase().replace(/^O-/,"O-");
+  if(/:/.test(txt||""))throw{code:"offline"};throw{code:"noqr"}}
+function stopCam(){if(scanTimer){clearInterval(scanTimer);scanTimer=null}if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null}}
+function decodeCanvas(cv){const ctx=cv.getContext("2d",{willReadFrequently:true});const d=ctx.getImageData(0,0,cv.width,cv.height);
+  const r=window.jsQR?jsQR(d.data,cv.width,cv.height,{inversionAttempts:"attemptBoth"}):null;return r&&r.data}
+function pickReceipt(){
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-label="Skeniraj QR kod računa"><div class="grab"></div>
+   <h2>Skeniraj QR kod računa</h2>
+   <div class="qrbox"><video id="qrv" playsinline muted></video><div class="qrframe" aria-hidden="true"></div><div class="qrmsg" id="qrmsg">Pokrećem kameru…</div></div>
+   <canvas id="qrc" hidden></canvas>
+   <div class="err" id="scanErr"></div>
+   <div class="row2"><button class="btn ghost" type="button" id="qrPhoto">Iz fotografije</button><button class="btn ghost" type="button" id="qrManual">Unesi ID ručno</button></div>
+   <div id="qrManualBox" hidden class="inrow" style="margin-top:10px"><label class="lbl" for="qrId">ID dokladu (počinje sa O-)</label><input id="qrId" autocomplete="off" autocapitalize="characters" placeholder="O-7AF0CFF74D45483F…"><button class="btn primary" type="button" id="qrGo" style="margin-top:8px">Učitaj doklad</button></div>
+   <div class="actions"><button class="btn ghost" type="button" id="qrClose">Zatvori</button></div></div></div>`;
+  const close=()=>{stopCam();$("#layer").innerHTML=""};
+  $("#qrClose").onclick=close;$("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};
+  $("#qrManual").onclick=()=>{$("#qrManualBox").hidden=false;$("#qrId").focus()};
+  $("#qrGo").onclick=()=>{try{loadById(extractId($("#qrId").value.trim()))}catch(e){$("#scanErr").textContent="ID mora izgledati ovako: O- pa 32 znaka (brojevi i slova A–F)."}};
+  $("#qrPhoto").onclick=()=>{const inp=document.createElement("input");inp.type="file";inp.accept="image/*";inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
+    try{const img=await createImageBitmap(f);const cv=$("#qrc");let txt=null;
+      for(const w of [1600,1000,700]){const s=Math.min(1,w/img.width);cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);txt=decodeCanvas(cv);if(txt)break}
+      loadById(extractId(txt))}catch(e){$("#scanErr").textContent=ekErr(e.code?e:{code:"noqr"})}};inp.click()};
+  startCam();
+}
+async function startCam(){
+  const v=$("#qrv"),msg=$("#qrmsg");
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent="Kamera nije dostupna. Koristi „Iz fotografije“.";return}
+  try{scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false})}
+  catch(e){msg.textContent="Nema dozvole za kameru. Dozvoli je u podešavanjima pregledača ili koristi „Iz fotografije“.";return}
+  if(!$("#qrv")){stopCam();return}
+  v.srcObject=scanStream;await v.play().catch(()=>{});msg.textContent="Uperi kameru u QR kod na računu";
+  const cv=$("#qrc");
+  scanTimer=setInterval(()=>{if(!v.videoWidth)return;const s=Math.min(1,800/v.videoWidth);cv.width=Math.round(v.videoWidth*s);cv.height=Math.round(v.videoHeight*s);
+    cv.getContext("2d",{willReadFrequently:true}).drawImage(v,0,0,cv.width,cv.height);const txt=decodeCanvas(cv);if(!txt)return;
+    try{const id=extractId(txt);stopCam();loadById(id)}catch(e){$("#scanErr").textContent=ekErr(e)}},180);
+}
+async function loadById(id){
+  stopCam();
+  const dup=receipts.find(r=>r.ekasaId===id);
+  $("#layer").innerHTML=`<div class="scrim"><div class="sheet" role="dialog" aria-label="Učitavam doklad"><div class="grab"></div>
+   <div class="scanning"><div class="spin" aria-hidden="true"></div><b>Učitavam doklad iz eKasa…</b><span class="num">${esc(id)}</span></div>
+   <div class="err" id="scanErr"></div><div class="actions"><button class="btn ghost" id="scanStop" type="button">Zatvori</button></div></div></div>`;
+  $("#scanStop").onclick=()=>$("#layer").innerHTML="";
+  try{draft=await fetchReceipt(id);if(!draft.items.length)throw{code:"bad"};if(!draft.ekasaId)draft.ekasaId=id;
+    openReview();if(dup)$("#rv_err").textContent="Pažnja: ovaj račun je već sačuvan ("+dup.date+"). Ako ga sačuvaš ponovo, biće upisan dva puta."}
+  catch(e){const el=$("#scanErr");if(!el)return;el.textContent=ekErr(e);$("#layer .scanning").innerHTML="<b>Doklad nije učitan</b>";
+    const b=document.createElement("button");b.className="btn primary";b.type="button";b.textContent="Probaj ponovo";b.onclick=()=>loadById(id);$("#layer .actions").prepend(b)}
+}
+
+function draftSplit(){const by={};draft.items.forEach(it=>{const c=subBudget(it.sub);by[c]=(by[c]||0)+(+it.price||0)});
+  Object.keys(by).forEach(k=>by[k]=Math.round(by[k]*100)/100);return by}
+function openReview(){
+  const sum=Math.round(draft.items.reduce((s,x)=>s+(+x.price||0),0)*100)/100,split=draftSplit(),diff=draft.total!=null?Math.round((draft.total-sum)*100)/100:0;
+  const opts=k=>Object.entries(GSUB).map(([id,[n]])=>`<option value="${id}"${id===k?" selected":""}>${n}</option>`).join("");
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="rvForm" role="dialog" aria-label="Proveri račun">
+   <div class="grab"></div><h2>${draft.id?"Izmeni račun":"Proveri račun"}</h2>
+   <div class="row2"><div class="inrow"><label class="lbl" for="rv_store">Prodavnica</label><input id="rv_store" maxlength="40" value="${esc(draft.store)}"></div>
+   <div class="inrow"><label class="lbl" for="rv_date">Datum</label><input id="rv_date" type="date" value="${draft.date}"></div></div>
+   <div class="lbl" style="margin:2px 0 6px">Artikli (${draft.items.length})</div>
+   <div class="rv-items">${draft.items.map((it,i)=>`<div class="rv-it"><div class="rv-top"><input class="rv-name" data-i="${i}" data-f="name" value="${esc(it.name)}" aria-label="Naziv artikla">
+     <span class="money rv-money"><input data-i="${i}" data-f="price" inputmode="decimal" value="${nf.format(it.price)}" aria-label="Cena"><span>€</span></span>
+     <button type="button" class="rv-x" data-del="${i}" aria-label="Ukloni artikal">×</button></div>
+     <div class="rv-bot"><select data-i="${i}" data-f="sub" aria-label="Kategorija artikla">${opts(it.sub)}</select>${it.raw&&it.raw!==it.name?`<span class="rv-raw">${esc(it.raw)}</span>`:""}</div></div>`).join("")}</div>
+   <button type="button" class="linkbtn" id="rv_add" style="margin:8px 2px 12px">+ Dodaj artikal</button>
+   <div class="rv-sum num"><div class="kv"><span>Zbir artikala</span><b>${eur(sum)}</b></div>
+    ${draft.total!=null?`<div class="kv"><span>Ukupno na računu</span><b>${eur(draft.total)}</b></div>`:""}
+    ${Math.abs(diff)>=.01?`<div class="rv-warn">Razlika ${eur(diff)}: proveri da li je neki artikal preskočen ili pogrešno pročitan.</div>`:draft.total!=null?`<div class="rv-ok">✓ Zbir se slaže sa računom</div>`:""}
+    <div class="lbl" style="margin:10px 0 4px">Upisuje se u budžet</div>
+    ${Object.entries(split).map(([k,v])=>`<div class="kv"><span>${CATS[k].name}</span><b>${eur(v)}</b></div>`).join("")}</div>
+   ${accounts.length?`<div class="inrow" style="margin-top:10px"><label class="lbl" for="rv_acc">Plaćeno sa</label><select id="rv_acc">${accOptions(draft.account,true)}</select></div>`:""}
+   <div class="err" id="rv_err"></div>
+   <div class="actions"><button class="btn primary" type="submit">Sačuvaj račun</button><button class="btn ghost" type="button" id="rv_cancel">Otkaži</button></div></form></div>`;
+  const keep=()=>{draft.store=$("#rv_store").value;draft.date=$("#rv_date").value;if($("#rv_acc"))draft.account=$("#rv_acc").value};
+  $("#rv_cancel").onclick=()=>{draft=null;$("#layer").innerHTML=""};
+  document.querySelectorAll("#rvForm [data-f]").forEach(el=>{const ev=el.tagName==="SELECT"?"change":"input";el.addEventListener(ev,()=>{const it=draft.items[+el.dataset.i],f=el.dataset.f;
+    if(f==="price"){const v=parseNum(el.value);it.price=isNaN(v)?0:Math.round(v*100)/100}else it[f]=el.value;
+    if(f!=="name"){keep();const y=$(".sheet").scrollTop;openReview();$(".sheet").scrollTop=y}})});
+  document.querySelectorAll("#rvForm [data-del]").forEach(b=>b.onclick=()=>{keep();draft.items.splice(+b.dataset.del,1);const y=$(".sheet").scrollTop;openReview();$(".sheet").scrollTop=y});
+  $("#rv_add").onclick=()=>{keep();draft.items.push({raw:"",name:"Novi artikal",qty:1,price:0,sub:"ostalo"});const y=$(".sheet").scrollTop;openReview();$(".sheet").scrollTop=y+120};
+  $("#rvForm").onsubmit=async e=>{e.preventDefault();keep();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)){$("#rv_err").textContent="Izaberi datum.";return}
+    if(!draft.items.length){$("#rv_err").textContent="Račun nema nijedan artikal.";return}
+    const btn=$("#rvForm .btn.primary");btn.disabled=true;btn.textContent="Čuvam…";
+    try{await saveReceipt();draft=null;$("#layer").innerHTML="";toast("Račun sačuvan")}
+    catch(err){btn.disabled=false;btn.textContent="Sačuvaj račun";$("#rv_err").textContent=errMsg(err)}};
+}
+async function saveReceipt(){
+  const old=draft.id?receipts.find(r=>r.id===draft.id):null;
+  const id=draft.id||newId("p"),now=Date.now(),split=draftSplit(),txIds=[];
+  if(old)for(const tid of (old.txIds||[]))await store.del("tx",tid);
+  let n=0;for(const [cat,amt] of Object.entries(split)){if(amt<=0)continue;const tid=id+"_"+cat;txIds.push(tid);
+    await store.setTx({id:tid,date:draft.date,month:mkey(draft.date),cat,desc:draft.store.trim()+(cat==="hrana"?"":" · "+CATS[cat].name.toLowerCase()),amount:amt,created:(old&&old.created||now)+(n++),account:draft.account||"",receipt:id})}
+  await store.set("receipts",{id,store:draft.store.trim()||"Prodavnica",date:draft.date,month:mkey(draft.date),total:draft.total,account:draft.account||"",
+    items:draft.items.map(it=>({name:String(it.name).trim().slice(0,60)||"Stavka",raw:it.raw||"",qty:+it.qty||1,price:+it.price||0,sub:it.sub})),txIds,created:old&&old.created||now,ekasaId:draft.ekasaId||(old&&old.ekasaId)||""});
+  const learned={};draft.items.forEach(it=>{const k=norm(it.raw||it.name).trim();if(!k)return;const auto=ruleMap[k]||it.auto;if(it.sub!==auto||(ruleMap[k]&&ruleMap[k]!==it.sub))learned[k]=it.sub});
+  for(const [k,sub] of Object.entries(learned)){try{await store.set("catrules",{id:hashKey(k),k,sub});ruleMap[k]=sub}catch(e){}}
+  if(draft.account){lastAcc=draft.account;try{localStorage.setItem("budzet-lastacc",lastAcc)}catch(e){}}
+  if(mkey(draft.date)!==cur){cur=mkey(draft.date);picked=true;render()}
+}
+function openReceiptDetail(r){
+  const d=new Date(r.date+"T12:00"),sum=r.items.reduce((s,x)=>s+(+x.price||0),0);
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-label="Račun"><div class="grab"></div>
+   <h2>${esc(r.store)}</h2><p class="note" style="margin:-6px 0 12px">${DAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${r.items.length} artikala</p>
+   <div class="txlist">${r.items.map(it=>`<div class="rd-it"><span class="mid"><b>${esc(it.name)}</b><span>${subName(it.sub)}${it.qty>1?" · "+String(it.qty).replace(".",",")+" kom":""}</span></span><span class="amt num">${eur(it.price)}</span></div>`).join("")}</div>
+   <div class="kv total num" style="margin-top:8px"><span>Ukupno</span><b>${eur(r.total!=null?r.total:sum)}</b></div>
+   <div class="err" id="rd_err"></div>
+   <div class="actions"><button class="btn primary" type="button" id="rd_edit">Izmeni artikle</button><button class="btn danger" type="button" id="rd_del">Obriši ceo račun</button><button class="btn ghost" type="button" id="rd_close">Zatvori</button></div></div></div>`;
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")$("#layer").innerHTML=""};$("#rd_close").onclick=()=>$("#layer").innerHTML="";
+  $("#rd_edit").onclick=()=>{draft={id:r.id,store:r.store,date:r.date,total:r.total,account:r.account||"",items:r.items.map(x=>({...x}))};openReview()};
+  let armed=false;$("#rd_del").onclick=async()=>{if(!armed){armed=true;$("#rd_del").textContent="Dodirni ponovo: briše račun i njegove troškove";return}
+    try{for(const tid of (r.txIds||[]))await store.del("tx",tid);await store.del("receipts",r.id);$("#layer").innerHTML="";toast("Račun obrisan")}catch(e){$("#rd_err").textContent=errMsg(e)}};
+}
+function viewGroceries(){
+  const rs=receipts.filter(r=>r.month===cur).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  const items=[];rs.forEach(r=>r.items.forEach(it=>items.push({...it,r})));
+  let h="";
+  if(!rs.length){h+=`<div class="txlist"><div class="empty"><b>Nema skeniranih računa za ${MONTHS[+cur.slice(5)-1]}</b>Skeniraj QR kod sa računa i artikli će se sami razvrstati.</div></div>`;
+    if(scanReady())h+=`<button class="btn primary" type="button" data-scan="1">Skeniraj QR kod računa</button>`}
+  else{
+    const food=items.filter(it=>subBudget(it.sub)==="hrana").reduce((s,x)=>s+(+x.price||0),0),all=items.reduce((s,x)=>s+(+x.price||0),0);
+    h+=`<section class="hero"><div class="lbl">Namirnice ovog meseca</div><div class="big num">${eur(food)}</div><div class="sub num">${rs.length} ${rs.length===1?"račun":rs.length<5?"računa":"računa"} · ${items.length} artikala · sa računa ukupno ${eur(all)}</div></section>`;
+    const by={};items.forEach(it=>{by[it.sub]=(by[it.sub]||0)+(+it.price||0)});
+    const arr=Object.entries(by).sort((a,b)=>b[1]-a[1]),mx=arr[0][1]||1;
+    h+=`<section class="card"><h2 class="sec-title">Po vrsti</h2><div class="gbars">${arr.map(([k,v])=>{const bc=subBudget(k),col=bc==="hrana"?"--g1":bc==="cigare"?"--g2":"--muted";
+      return`<div class="gbar"><div class="gbar-top"><span>${subName(k)}</span><b class="num">${eur(v)}</b></div><div class="bar"><i style="width:${v/mx*100}%;background:var(${col})"></i></div></div>`}).join("")}</div></section>`;
+    const cnt={};items.forEach(it=>{const k=norm(it.name);cnt[k]=cnt[k]||{name:it.name,n:0,sum:0};cnt[k].n+=1;cnt[k].sum+=+it.price||0});
+    const top=Object.values(cnt).sort((a,b)=>b.n-a.n||b.sum-a.sum).slice(0,6);
+    h+=`<section class="card"><h2 class="sec-title">Najčešće kupuješ</h2>${top.map(t=>`<div class="kv"><span>${esc(t.name)} <span class="muted">× ${t.n}</span></span><b class="num">${eur(t.sum)}</b></div>`).join("")}</section>`;
+    h+=`<div><div class="sub-h"><h3>Računi</h3></div><div class="txlist">${rs.map(r=>{const d=new Date(r.date+"T12:00");const t=r.total!=null?r.total:r.items.reduce((s,x)=>s+(+x.price||0),0);
+      return`<button class="tx" type="button" data-rcpt="${esc(r.id)}" style="--gc:var(--g1)"><span class="ic">${esc(r.store.slice(0,2).toUpperCase())}</span><span class="mid"><b>${esc(r.store)}</b><span>${d.getDate()}. ${MONTHS[d.getMonth()]} · ${r.items.length} artikala</span></span><span class="amt num">${eur(t)}</span></button>`}).join("")}</div></div>`;
+  }
+  if(receipts.length)h+=`<section class="card"><h2 class="sec-title">Kada sam kupio…</h2><div class="inrow" style="margin:0"><input id="gsearch" type="search" placeholder="npr. kafa, mleko, piletina" autocomplete="off" aria-label="Pretraga artikala"></div><div id="gres"><p class="note">Pretraga ide kroz sve skenirane račune, u svim mesecima.</p></div></section>`;
+  return h;
+}
+function bindGroceries(){const s=$("#gsearch");if(!s)return;
+  s.oninput=()=>{const q=norm(s.value.trim());const out=$("#gres");if(q.length<2){out.innerHTML='<p class="note">Upiši bar 2 slova.</p>';return}
+    const hits=[];receipts.forEach(r=>r.items.forEach(it=>{if(norm(it.name).includes(q)||norm(it.raw).includes(q))hits.push({it,r})}));
+    hits.sort((a,b)=>b.r.date.localeCompare(a.r.date));
+    if(!hits.length){out.innerHTML=`<p class="note">Nema artikla koji sadrži „${esc(s.value.trim())}“.</p>`;return}
+    out.innerHTML=`<p class="note" style="margin:8px 0 4px">${hits.length} ${hits.length===1?"kupovina":"kupovina"}</p>`+hits.slice(0,40).map(({it,r})=>{const d=new Date(r.date+"T12:00");
+      return`<div class="kv"><span>${esc(it.name)}<br><span class="muted">${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${esc(r.store)}</span></span><b class="num">${eur(it.price)}</b></div>`}).join("")}}
+
+/* ---------- sheet (add / edit) ---------- */
+function openSheet(t){
+  const edit=!!t;const firstCat=t?t.cat:"hrana";
+  let date=t?t.date:(mkey(todayISO())===cur?todayISO():cur+"-01");
+  let sel=firstCat;
+  const chips=GROUPS.map(G=>G.cats.map(([id,name])=>`<button type="button" class="chip" data-c="${id}" style="--gc:var(${G.color})" aria-pressed="${id===sel}">${name}</button>`).join("")).join("");
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="txForm" role="dialog" aria-label="${edit?"Izmeni trošak":"Novi trošak"}">
+   <div class="grab"></div><h2>${edit?"Izmeni trošak":"Novi trošak"}</h2>
+   ${!edit&&scanReady()?`<button type="button" class="btn scan" id="f_scan" style="margin-bottom:10px">${CAM}Skeniraj QR kod računa</button>`:""}
+   <div class="amt-in"><input id="f_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${t?nf.format(t.amount):""}"><span>€</span></div>
+   <div class="lbl" style="margin-bottom:8px">Kategorija</div><div class="chips">${chips}</div>
+   <div class="inrow"><label class="lbl" for="f_desc">Opis</label><input id="f_desc" maxlength="80" placeholder="npr. Lidl, struja, Netflix" value="${esc(t?t.desc:"")}"></div>
+   <div class="inrow"><label class="lbl" for="f_date">Datum</label><input id="f_date" type="date" value="${date}"></div>
+   ${accounts.length?`<div class="inrow"><label class="lbl" for="f_acc">Plaćeno sa</label><select id="f_acc">${accOptions(t?t.account||"":(accounts.some(a=>a.id===lastAcc)?lastAcc:""),true)}</select></div>`:""}
+   <div class="err" id="f_err"></div>
+   <div class="actions"><button class="btn primary" type="submit">${edit?"Sačuvaj izmene":"Dodaj trošak"}</button>
+   ${edit?`<button class="btn danger" type="button" id="f_del">Obriši trošak</button>`:""}
+   <button class="btn ghost" type="button" id="f_cancel">Otkaži</button></div></form></div>`;
+  const close=()=>$("#layer").innerHTML="";
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};
+  $("#f_cancel").onclick=close;
+  document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{sel=b.dataset.c;document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+  if($("#f_scan"))$("#f_scan").onclick=()=>{close();pickReceipt()};
+  if(!edit)setTimeout(()=>$("#f_amt").focus(),60);
+  if(edit){let armed=false;$("#f_del").onclick=async()=>{
+    if(!armed){armed=true;$("#f_del").textContent="Dodirni ponovo za brisanje";return}
+    try{await store.delTx(t.id);close();toast("Trošak obrisan")}catch(e){$("#f_err").textContent=errMsg(e)}}}
+  $("#txForm").onsubmit=async e=>{e.preventDefault();
+    const a=parseNum($("#f_amt").value),d=$("#f_date").value;
+    if(isNaN(a)||a<=0){$("#f_err").textContent="Unesi iznos veći od nule, npr. 12,50.";return}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){$("#f_err").textContent="Izaberi datum.";return}
+    const id=t?t.id:("t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6));
+    const rec={id,date:d,month:mkey(d),cat:sel,desc:$("#f_desc").value.trim().slice(0,80),amount:Math.round(a*100)/100,created:t?t.created:Date.now(),account:$("#f_acc")?$("#f_acc").value:(t&&t.account)||""};
+    if(!t&&rec.account){lastAcc=rec.account;try{localStorage.setItem("budzet-lastacc",lastAcc)}catch(e){}}
+    try{await store.setTx(rec);close();toast(edit?"Izmene sačuvane":"Trošak dodat");if(rec.month!==cur){cur=rec.month;picked=true;render()}}
+    catch(err){$("#f_err").textContent=errMsg(err)}};
+}
+function errMsg(e){const c=e&&e.code;
+  if(c==="invalid_argument"||c==="permission-denied")return"Nemaš dozvolu da menjaš ove podatke. Proveri Firestore pravila (korak 3 u uputstvu).";
+  if(c==="quota_exceeded")return"Prostor za podatke je pun. Obriši stare troškove pa pokušaj ponovo.";
+  return"Čuvanje nije uspelo. Proveri internet vezu i pokušaj ponovo."}
+let tt;function toast(msg){clearTimeout(tt);let el=$(".toast");if(!el){el=document.createElement("div");el.className="toast";el.setAttribute("role","status");document.body.appendChild(el)}el.textContent=msg;tt=setTimeout(()=>el.remove(),1800)}
+
+/* ---------- events ---------- */
+$("#prevM").onclick=()=>{cur=shift(cur,-1);picked=true;render()};
+$("#nextM").onclick=()=>{cur=shift(cur,1);picked=true;render()};
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();window.scrollTo(0,0)});
+$("#fab").onclick=()=>openSheet(null);
+$("#main").addEventListener("click",e=>{
+  const b=e.target.closest("[data-tx]");if(b){const t=txs.find(x=>x.id===b.dataset.tx);if(!t)return;const r=t.receipt&&receipts.find(x=>x.id===t.receipt);if(r)openReceiptDetail(r);else openSheet(t);return}
+  const rc=e.target.closest("[data-rcpt]");if(rc){const r=receipts.find(x=>x.id===rc.dataset.rcpt);if(r)openReceiptDetail(r);return}
+  const tv=e.target.closest("[data-txv]");if(tv){txView=tv.dataset.txv;render();return}
+  if(e.target.closest("[data-scan]")){pickReceipt();return}
+  const ac=e.target.closest("[data-acc]");if(ac){const a=accounts.find(x=>x.id===ac.dataset.acc);if(a)openAccountSheet(a);return}
+  const sb=e.target.closest("[data-sub]");if(sb){const x=subs.find(y=>y.id===sb.dataset.sub);if(x)openSubSheet(x);return}
+  const tr=e.target.closest("[data-tr]");if(tr){const r=transfers.find(x=>x.id===tr.dataset.tr);if(r)openTransferSheet(r);return}
+  const g=e.target.closest("[data-goto]");if(g){tab=g.dataset.goto;render();window.scrollTo(0,0);return}
+  if(e.target.closest("#addAcc")){openAccountSheet(null);return}
+  if(e.target.closest("#addTr")&&accounts.length>1){openTransferSheet(null)}
+});
+function pickStart(){if(picked)return;const keys=Object.keys(months).sort();if(keys.length&&!months[cur]&&cur<keys[0])cur=keys[0]}
+
+/* ---------- storage (Firebase) ---------- */
+let fbUser=null,unsubs=[];
+function fbShim(FB,uid){const base="users/"+uid+"/";const clean=d=>JSON.parse(JSON.stringify(d));
+  return{doc:p=>({set:d=>FB.setDoc(FB.doc(FB.db,base+p),clean(d)),delete:()=>FB.deleteDoc(FB.doc(FB.db,base+p))}),
+    collection:p=>({onSnapshot:(next,err)=>FB.onSnapshot(FB.collection(FB.db,base+p),s=>next({docs:s.docs.map(d=>({id:d.id,data:()=>d.data()}))}),err)})}}
+function showLogin(msg){
+  document.body.classList.add("nologin");
+  $("#monthTitle").textContent="BUDŽETIRANJE";$("#viewName").textContent="Prijava";
+  $("#main").innerHTML=`<section class="card login"><h2 class="sec-title">Prijavi se</h2>
+   <form id="loginForm"><div class="inrow"><label class="lbl" for="lg_email">E-mail</label><input id="lg_email" type="email" autocomplete="username" required></div>
+   <div class="inrow"><label class="lbl" for="lg_pass">Lozinka</label><input id="lg_pass" type="password" autocomplete="current-password" required></div>
+   <div class="err" id="lg_err">${esc(msg||"")}</div><button class="btn primary" type="submit">Prijavi se</button></form>
+   <p class="note">Nalog se pravi u Firebase konzoli (Authentication → Users → Add user). Vidi korak 4 u uputstvu.</p></section>`;
+  $("#loginForm").onsubmit=async e=>{e.preventDefault();$("#lg_err").textContent="";
+    try{await window.__fb.signIn($("#lg_email").value.trim(),$("#lg_pass").value)}
+    catch(err){$("#lg_err").textContent=/invalid|wrong|not-found|credential/.test(err.code||"")?"Pogrešan e-mail ili lozinka.":/too-many/.test(err.code||"")?"Previše pokušaja. Sačekaj malo.":"Prijava nije uspela ("+(err.code||"greška")+")."}};
+}
+function showSetup(){document.body.classList.add("nologin");$("#monthTitle").textContent="BUDŽETIRANJE";$("#viewName").textContent="Podešavanje";
+  $("#main").innerHTML=`<section class="card"><h2 class="sec-title">Aplikacija još nije povezana</h2><p>Upiši Firebase podatke u <b>CONFIG</b> na vrhu fajla <b>index.html</b> (korak 3 u uputstvu), pa ponovo otvori stranicu.</p></section>`}
+function startData(FB,user){
+  fbUser=user;document.body.classList.remove("nologin");
+  unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[];
+  Object.keys(ready).forEach(k=>ready[k]=false);ready.c=false;render();
+  const db=fbShim(FB,user.uid);
+  store={setMonth:(k,d)=>db.doc("months/"+k).set(d),setTx:r=>db.doc("tx/"+r.id).set(r),delTx:id=>db.doc("tx/"+id).delete(),
+    set:(c,r)=>db.doc(c+"/"+r.id).set(r),del:(c,id)=>db.doc(c+"/"+id).delete()};
+  const er=k=>e=>{console.error(e);ready[k]=true;render()};
+  unsubs.push(db.collection("accounts").onSnapshot(s=>{accounts=s.docs.map(d=>({...d.data(),id:d.id}));ready.a=true;render()},er("a")));
+  unsubs.push(db.collection("receipts").onSnapshot(s=>{receipts=s.docs.map(d=>({...d.data(),id:d.id,items:Array.isArray(d.data().items)?d.data().items:[]}));ready.p=true;render()},er("p")));
+  unsubs.push(db.collection("subs").onSnapshot(s=>{subs=s.docs.map(d=>({...d.data(),id:d.id}));ready.s=true;render()},er("s")));
+  unsubs.push(db.collection("transfers").onSnapshot(s=>{transfers=s.docs.map(d=>({...d.data(),id:d.id}));ready.r=true;render()},er("r")));
+  unsubs.push(db.collection("months").onSnapshot(s=>{const o={};s.docs.forEach(d=>o[d.id]=d.data());months=o;ready.m=true;pickStart();render()},er("m")));
+  unsubs.push(db.collection("tx").onSnapshot(s=>{txs=s.docs.map(d=>({...d.data(),id:d.id}));ready.t=true;render()},er("t")));
+  unsubs.push(db.collection("catrules").onSnapshot(s=>{const o={};s.docs.forEach(d=>{const x=d.data();if(x.k&&x.sub)o[x.k]=x.sub});ruleMap=o;ready.c=true},er("c")));
+}
+function start(){
+  render();
+  const cfg=CONFIG.firebase||{};
+  if(!cfg.apiKey||!cfg.projectId){showSetup();return}
+  const go=()=>{const FB=window.__fb;if(!FB){showLogin("Firebase se nije učitao. Proveri internet vezu.");return}
+    FB.onAuth(u=>{if(u)startData(FB,u);else{unsubs.forEach(x=>{try{x()}catch(e){}});unsubs=[];showLogin()}})};
+  if(window.__fb)go();else{window.addEventListener("fb-ready",go,{once:true});setTimeout(()=>{if(!window.__fb)showLogin("Firebase se nije učitao. Proveri internet vezu.")},15000)}
+}
+/* ---------- settings: backup ---------- */
+function settingsCard(){return `<section class="card"><h2 class="sec-title">Podešavanja</h2>
+  <div class="kv"><span>Prijavljen kao</span><b>${esc(fbUser&&fbUser.email||"")}</b></div>
+  <div class="row2" style="margin-top:10px"><button class="btn ghost" type="button" id="bkExport">Izvezi kopiju</button><button class="btn ghost" type="button" id="bkImport">Uvezi kopiju</button></div>
+  <div class="err" id="bkErr"></div>
+  <button class="btn ghost" type="button" id="logout" style="margin-top:4px">Odjavi se</button></section>`}
+function bindSettings(){
+  const ex=$("#bkExport");if(!ex)return;
+  ex.onclick=()=>{const data={months:Object.entries(months).map(([id,v])=>({...v,id})),tx:txs,accounts,transfers,subs,receipts};
+    const blob=new Blob([JSON.stringify({app:"budzetiranje",version:1,exported:todayISO(),data},null,1)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="budzet-kopija-"+todayISO()+".json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)};
+  $("#bkImport").onclick=()=>{const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
+    try{const j=JSON.parse(await f.text());const d=j.data||j;let n=0;
+      const cols=["months","tx","accounts","transfers","subs","receipts"];
+      for(const c of cols)for(const r of (d[c]||[])){if(!r||!r.id)continue;const {id,...rest}=r;
+        if(c==="months")await store.setMonth(id,rest);else await store.set(c,{...rest,id});n++}
+      toast(n+" zapisa uvezeno")}catch(e){$("#bkErr").textContent="Fajl nije ispravna rezervna kopija."}};inp.click()};
+  $("#logout").onclick=()=>window.__fb.signOut();
+}
+start();
+
+})();
+</script>
+
+</body>
+</html>
