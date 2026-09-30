@@ -15,7 +15,7 @@
 /* ======================================================================
    PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
    ====================================================================== */
-const APP_VERSION="2.1.0";
+const APP_VERSION="2.2.0";
 const CONFIG={
   firebase:{
     apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
@@ -315,6 +315,10 @@ img{max-width:100%}[hidden]{display:none!important}
 .invbox{margin-top:10px;background:var(--surface2);border:1px dashed var(--g1);border-radius:14px;padding:12px}
 .invcode{font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:.06em;margin-top:2px}
 .danger-link{color:var(--bad)}
+.ce-inc{flex-direction:row;align-items:center}
+.rv-x:disabled{opacity:.3}
+.welcome{border-color:var(--g1);background:var(--info-bg)}
+.welcome p{margin:0 0 12px}
 .rv-map span{display:flex;flex-direction:column;gap:4px}
 .rv-map select{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:220px}
 #bd_name,#bd_code,#nb_code{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
@@ -365,6 +369,12 @@ const DEFAULT_CATS=[
  {id:"osnovni",cats:[{id:"hipoteka",name:"Hipoteka"},{id:"racuni",name:"Računi",items:true},{id:"pretplate",name:"Online pretplate",items:true},{id:"hrana",name:"Hrana"}]},
  {id:"licno",cats:[{id:"cigare",name:"Cigare"},{id:"razno",name:"Razno"}]},
  {id:"invest",cats:[{id:"etf",name:"ETF"},{id:"zlato",name:"Investiciono zlato"}]}];
+const TEMPLATE_CATS=[
+ {id:"osnovni",cats:[{id:"stan",name:"Stanovanje"},{id:"racuni",name:"Računi",items:true},{id:"pretplate",name:"Online pretplate",items:true},{id:"hrana",name:"Hrana"},{id:"prevoz",name:"Prevoz"}]},
+ {id:"licno",cats:[{id:"izlasci",name:"Izlasci i zabava"},{id:"odeca",name:"Odeća"},{id:"razno",name:"Razno"}]},
+ {id:"invest",cats:[{id:"stednja",name:"Štednja"},{id:"investicije",name:"Investicije"}]}];
+const DEFAULT_INC=[{id:"plata",name:"Plata"}];
+let INC=DEFAULT_INC;
 let GROUPS=[],CATS={},CATINFO={},CATDEF=DEFAULT_CATS;
 function setCats(def){def=Array.isArray(def)&&def.length?def:DEFAULT_CATS;CATDEF=def;
   GROUPS=GMETA.map(m=>{const g=def.find(x=>x.id===m.id)||{cats:[]};return{...m,cats:(g.cats||[]).map(c=>[c.id,c.name])}});
@@ -377,15 +387,19 @@ const slug=s=>norm(s).replace(/[^a-z0-9]+/g,"").slice(0,16)||"kat";
 /* ---------- category editor ---------- */
 let ed=null;
 function openCatEditor(){
-  ed={groups:GMETA.map(m=>{const g=CATDEF.find(x=>x.id===m.id)||{cats:[]};return{id:m.id,cats:(g.cats||[]).map(c=>({...c}))}}),deleted:[]};
+  ed={inc:INC.map(x=>({...x})),groups:GMETA.map(m=>{const g=CATDEF.find(x=>x.id===m.id)||{cats:[]};return{id:m.id,cats:(g.cats||[]).map(c=>({...c}))}}),deleted:[]};
   renderCatEditor();
 }
 function usage(id){return{tx:txs.filter(t=>t.cat===id).length,subs:subs.filter(s=>(s.cat||"pretplate")===id).length}}
 function renderCatEditor(){
   const y=$("#layer .sheet")?$("#layer .sheet").scrollTop:0;
   const all=ed.groups.flatMap(g=>g.cats);
-  let h=`<div class="scrim" id="scrim"><form class="sheet" id="ceForm" role="dialog" aria-label="Uredi kategorije"><div class="grab"></div><h2>Kategorije</h2>
-   <p class="note" style="margin:-6px 0 12px">Promene važe za ceo budžet i sve njegove članove. Grupe odgovaraju pravilu 50/30/20.</p>`;
+  let h=`<div class="scrim" id="scrim"><form class="sheet" id="ceForm" role="dialog" aria-label="Uredi kategorije i prihode"><div class="grab"></div><h2>Kategorije i prihodi</h2>
+   <p class="note" style="margin:-6px 0 12px">Promene važe za ceo budžet i sve njegove članove.</p>
+   <div class="ce-group" style="--gc:var(--ok)"><div class="ce-gh">Izvori prihoda</div>
+   ${ed.inc.map((x,i)=>`<div class="ce-row ce-inc"><input class="ce-name" data-incn="${i}" maxlength="30" value="${esc(x.name)}" placeholder="npr. Plata, Honorar, Najam" aria-label="Naziv izvora prihoda"><button type="button" class="rv-x" data-incdel="${i}" aria-label="Obriši izvor prihoda"${ed.inc.length<2?" disabled":""}>×</button></div>`).join("")}
+   <button type="button" class="linkbtn" id="incAdd" style="margin:6px 2px 4px">+ Dodaj izvor prihoda</button></div>
+   <p class="note" style="margin:0 0 10px">Kategorije troškova (grupe odgovaraju pravilu 50/30/20):</p>`;
   ed.groups.forEach((g,gi)=>{const M=GMETA[gi];
     h+=`<div class="ce-group" style="--gc:var(${M.color})"><div class="ce-gh">${M.name}</div>`;
     if(!g.cats.length)h+=`<p class="note" style="margin:4px 0 8px">Nema kategorija u ovoj grupi.</p>`;
@@ -402,7 +416,10 @@ function renderCatEditor(){
   h+=`<div class="err" id="ce_err"></div><div class="actions"><button class="btn primary" type="submit">Sačuvaj kategorije</button><button class="btn ghost" type="button" id="ce_cancel">Otkaži</button></div></form></div>`;
   $("#layer").innerHTML=h;if($("#layer .sheet"))$("#layer .sheet").scrollTop=y;
   $("#ce_cancel").onclick=()=>{ed=null;$("#layer").innerHTML=""};
-  document.querySelectorAll("#ceForm .ce-name").forEach(el=>el.oninput=()=>{ed.groups[+el.dataset.g].cats[+el.dataset.c].name=el.value});
+  document.querySelectorAll("#ceForm [data-incn]").forEach(el=>el.oninput=()=>{ed.inc[+el.dataset.incn].name=el.value});
+  document.querySelectorAll("#ceForm [data-incdel]").forEach(el=>el.onclick=()=>{if(ed.inc.length<2)return;ed.inc.splice(+el.dataset.incdel,1);renderCatEditor()});
+  $("#incAdd").onclick=()=>{ed.inc.push({id:"i"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:"",_new:true});renderCatEditor();const ins=document.querySelectorAll("#ceForm [data-incn]");ins[ins.length-1].focus()};
+  document.querySelectorAll("#ceForm .ce-name[data-g]").forEach(el=>el.oninput=()=>{ed.groups[+el.dataset.g].cats[+el.dataset.c].name=el.value});
   document.querySelectorAll("#ceForm [data-items]").forEach(el=>el.onchange=()=>{const[g,c]=el.dataset.items.split(":").map(Number);ed.groups[g].cats[c].items=el.checked});
   document.querySelectorAll("#ceForm [data-move]").forEach(el=>el.onchange=()=>{const[g,c]=el.dataset.move.split(":").map(Number);const to=+el.value;if(to===g)return;
     const [cat]=ed.groups[g].cats.splice(c,1);ed.groups[to].cats.push(cat);renderCatEditor()});
@@ -416,13 +433,15 @@ function renderCatEditor(){
   $("#ceForm").onsubmit=async e=>{e.preventDefault();
     const all2=ed.groups.flatMap(g=>g.cats);
     if(!all2.length){$("#ce_err").textContent="Budžet mora imati bar jednu kategoriju.";return}
+    if(ed.inc.some(x=>!x.name.trim())){$("#ce_err").textContent="Svaki izvor prihoda mora imati naziv.";return}
+    const incomeSources=ed.inc.map(x=>({id:x._new?slug(x.name)+"_"+x.id.slice(-4):x.id,name:x.name.trim().slice(0,30)}));
     if(all2.some(c=>!c.name.trim())){$("#ce_err").textContent="Svaka kategorija mora imati naziv.";return}
     const names=all2.map(c=>norm(c.name.trim()));if(new Set(names).size!==names.length){$("#ce_err").textContent="Dve kategorije imaju isti naziv.";return}
     const moves=ed.deleted.filter(d=>(d.use.tx||d.use.subs));
     if(moves.some(d=>!all2.find(c=>c.id===d.target))){$("#ce_err").textContent="Izaberi gde da se premeste troškovi obrisanih kategorija.";return}
     const cats=ed.groups.map(g=>({id:g.id,cats:g.cats.map(c=>{const o={id:c._new?slug(c.name)+"_"+c.id.slice(-4):c.id,name:c.name.trim().slice(0,30)};if(c.items)o.items=true;return o})}));
     const btn=$("#ceForm .btn.primary");btn.disabled=true;btn.textContent="Čuvam…";
-    try{await store.setBudget({cats});
+    try{await store.setBudget({cats,incomeSources});
       for(const d of moves){for(const t of txs.filter(t=>t.cat===d.id))await store.setTx({...t,cat:d.target});
         for(const s of subs.filter(s=>(s.cat||"pretplate")===d.id))await store.set("subs",{...s,cat:d.target})}
       ed=null;$("#layer").innerHTML="";toast("Kategorije sačuvane")}
@@ -461,15 +480,17 @@ function accTotals(){let inB=0,outB=0;accounts.forEach(a=>{const b=accBal(a);if(
 let lastAcc="";try{lastAcc=localStorage.getItem("budzet-lastacc")||""}catch(e){}
 
 /* ---------- data access ---------- */
+function incOf(m){if(m&&m.incomes&&typeof m.incomes==="object")return {...m.incomes};return m&&m.income?{[INC[0].id]:+m.income}:{}}
+const incSum=o=>INC.reduce((s,x)=>s+(+o[x.id]||0),0);
 function monthData(k){
-  if(months[k])return {...months[k],_exists:true};
+  if(months[k])return {...months[k],incomes:incOf(months[k]),_exists:true};
   const keys=Object.keys(months).sort();
   const prev=keys.filter(x=>x<k).pop(), next=keys.find(x=>x>k), src=prev||next;
   const base=src?months[src]:{income:0,budgets:{}};
-  return {income:base.income||0,budgets:{...(base.budgets||{})},carry:null,_exists:false};
+  return {incomes:incOf(base),budgets:{...(base.budgets||{})},carry:null,_exists:false};
 }
 function calc(k,depth=0){
-  const m=monthData(k),inc=+m.income||0;
+  const m=monthData(k),inc=Math.round(incSum(m.incomes)*100)/100;
   const spent={};txs.forEach(t=>{if(t.month===k)spent[t.cat]=(spent[t.cat]||0)+(+t.amount||0)});
   const cats={};let plan=0,spentAll=0;
   Object.values(CATS).forEach(c=>{const b=+(m.budgets||{})[c.id]||0,s=spent[c.id]||0;cats[c.id]={b,s};plan+=b;spentAll+=s});
@@ -512,11 +533,13 @@ function copyForSheet(){
   try{navigator.clipboard.writeText(tsv).then(()=>toast(list.length+" troškova kopirano"),fallback)}catch(e){fallback()}
 }
 function viewOverview(c){
+  let welcome="";if(!Object.keys(months).length)welcome=`<section class="card welcome"><h2 class="sec-title">Dobrodošao u Budžetiranje</h2><p>Počni u <b>Planu</b>: upiši prihode i koliko planiraš da trošiš po kategorijama. Izvore prihoda i kategorije menjaš dugmetom <b>Uredi kategorije i prihode</b>.</p><button class="btn primary" type="button" data-goto="plan">Otvori Plan</button></section>`;
   const over=c.spent>c.plan&&c.plan>0;
   const spentW=c.inc?Math.min(c.spent/c.inc,1)*100:0, planW=c.inc?Math.max(Math.min(c.plan/c.inc,1)*100-spentW,0):0;
-  let h=`<section class="hero"><div class="lbl">Ostaje ovog meseca</div>
+  let h=welcome+`<section class="hero"><div class="lbl">Ostaje ovog meseca</div>
   <div class="big num" style="color:${c.ostaje<0?"var(--bad)":"var(--ink)"}">${eur(c.ostaje)}</div>
   <div class="sub num">Prihod ${eur(c.inc)} · potrošeno ${eur(c.spent)}</div>
+  ${INC.length>1?`<div class="sub num" style="margin-top:2px">${INC.map(x=>esc(x.name)+" "+eur(c.m.incomes[x.id]||0)).join(" · ")}</div>`:""}
   <div class="meter" aria-hidden="true"><i style="width:${spentW}%;background:${over?"var(--bad)":"var(--g1)"}"></i><i style="width:${planW}%;background:var(--line)"></i></div>
   <div class="meter-legend num"><span>Potrošeno ${pct(c.plan?c.spent/c.plan:0)} plana</span><span>Plan ${eur(c.plan)}</span></div></section>`;
   if(accounts.length){const T=accTotals();
@@ -529,7 +552,7 @@ function viewOverview(c){
     h+=`</div></section>`}
   h+=`<div class="kpis">
    <div class="kpi"><div class="lbl">Planirani rashodi</div><b class="num">${eur(c.plan)}</b><small class="num">višak po planu: ${eur(c.inc-c.plan)}</small></div>
-   <div class="kpi"><div class="lbl">Stopa investiranja</div><b class="num">${pct(c.invRate)}</b><small>ETF + zlato / prihodi</small></div></div>`;
+   <div class="kpi"><div class="lbl">Stopa investiranja</div><b class="num">${pct(c.invRate)}</b><small>grupa Štednja / prihodi</small></div></div>`;
   // donut
   let acc=0,seg="",leg="";
   Object.values(CATS).forEach(cat=>{const b=c.cats[cat.id].b;if(!b||!c.plan)return;const p=b/c.plan*100;
@@ -584,8 +607,9 @@ function viewTx(c){
 }
 function viewPlan(c){
   const m=c.m;
-  let h=`<div class="plan-top"><span class="lbl">${esc(budgetDoc.name||"Budžet")}${(budgetDoc.members||[]).length>1?" · "+(budgetDoc.members||[]).length+" člana":""}</span><button type="button" class="linkbtn" id="catEdit">Uredi kategorije</button></div>`+`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
-   <div class="field"><label for="p_income">Mesečni prihod</label><span class="money"><input id="p_income" inputmode="decimal" value="${nf.format(m.income||0)}"><span>€</span></span></div>
+  let h=`<div class="plan-top"><span class="lbl">${esc(budgetDoc.name||"Budžet")}${(budgetDoc.members||[]).length>1?" · "+(budgetDoc.members||[]).length+" člana":""}</span><button type="button" class="linkbtn" id="catEdit">Uredi kategorije i prihode</button></div>`+`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
+${INC.map(x=>`<div class="field"><label for="i_${x.id}">${esc(x.name)}</label><span class="money"><input id="i_${x.id}" data-inc="${x.id}" inputmode="decimal" value="${nf.format(m.incomes[x.id]||0)}"><span>€</span></span></div>`).join("")}
+   ${INC.length>1?`<div class="kv total num"><span>Ukupno prihodi</span><b>${eur(c.inc)}</b></div>`:""}
    <div class="field"><label for="p_carry">Preneto iz prethodnog meseca<small>Prazno = automatski (${eur(c.autoCarry?c.carry:0)})</small></label><span class="money"><input id="p_carry" inputmode="decimal" placeholder="auto" value="${typeof m.carry==="number"?nf.format(m.carry):""}"><span>€</span></span></div></section>`;
   GROUPS.forEach(G=>{h+=`<section class="card" style="border-left:5px solid var(${G.color})"><h2 class="sec-title" style="color:var(${G.color})">${G.name}</h2>`;
     G.cats.forEach(([id,name])=>{
@@ -679,17 +703,19 @@ function bindPlan(){
   if($("#catEdit"))$("#catEdit").onclick=openCatEditor;
   if(planDirtyKey!==cur){planDirty={};planDirtyKey=cur}
   Object.entries(planDirty).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v});
-  document.querySelectorAll("#p_income,#p_carry,[data-cat]").forEach(el=>el.addEventListener("input",()=>{planDirty[el.id]=el.value}));
+  document.querySelectorAll("[data-inc],#p_carry,[data-cat]").forEach(el=>el.addEventListener("input",()=>{planDirty[el.id]=el.value}));
   document.querySelectorAll("[data-subtg]").forEach(b=>b.onclick=()=>{const c=b.dataset.subtg;subsOpen[c]=!subsOpen[c];render()});
   document.querySelectorAll(".subSort").forEach(i=>i.onchange=e=>{subSort=e.target.checked;try{localStorage.setItem("budzet-subsort",subSort?"1":"0")}catch(_){}render()});
   document.querySelectorAll("[data-addsub]").forEach(b=>b.onclick=()=>openSubSheet(null,b.dataset.addsub));
   document.querySelectorAll("[data-tobudget]").forEach(b=>b.onclick=()=>{const c=b.dataset.tobudget,v=nf.format(listFor(c).reduce((s,x)=>s+(+x.amount||0),0));planDirty["b_"+c]=v;render();toast("Iznos upisan, klikni Sačuvaj plan")});
   $("#savePlan").onclick=async()=>{
-    const inc=parseNum($("#p_income").value),cs=$("#p_carry").value.trim(),carry=cs?parseNum(cs):null;
-    const budgets={};let bad=isNaN(inc)||(cs&&isNaN(carry));
+    const cs=$("#p_carry").value.trim(),carry=cs?parseNum(cs):null;const incomes={};
+    const budgets={};let bad=!!(cs&&isNaN(carry));
+    document.querySelectorAll("[data-inc]").forEach(i=>{const v=parseNum(i.value);if(isNaN(v)||v<0)bad=true;incomes[i.dataset.inc]=Math.round(v*100)/100});
+    const inc=incSum(incomes);
     document.querySelectorAll("[data-cat]").forEach(i=>{const v=parseNum(i.value);if(isNaN(v)||v<0)bad=true;budgets[i.dataset.cat]=Math.round(v*100)/100});
     if(bad){$("#planErr").textContent="Proveri iznose: koristi samo brojeve, npr. 480,60.";return}
-    try{await store.setMonth(cur,{income:Math.round(inc*100)/100,carry:carry===null?null:Math.round(carry*100)/100,budgets});planDirty={};toast("Plan sačuvan")}
+    try{await store.setMonth(cur,{incomes,income:Math.round(inc*100)/100,carry:carry===null?null:Math.round(carry*100)/100,budgets});planDirty={};toast("Plan sačuvan")}
     catch(e){$("#planErr").textContent=errMsg(e)}
   };
 }
@@ -891,7 +917,7 @@ async function loadById(id){
 }
 
 const BUCKET={hrana:"Namirnice",cigare:"Cigare i duvan",razno:"Higijena, kuća i ostalo"};
-function rmapFor(b){const m=(draft&&draft.map&&draft.map[b])||(budgetDoc.receiptMap||{})[b];if(m&&CATS[m])return m;if(CATS[b])return b;
+function rmapFor(b){const m=(draft&&draft.map&&draft.map[b])||(budgetDoc.receiptMap||{})[b];if(m&&CATS[m])return m;if(CATS[b])return b;if(b==="cigare"&&CATS.razno)return "razno";
   const G=GROUPS.find(x=>x.id===(b==="hrana"?"osnovni":"licno")&&x.cats.length)||GROUPS.find(x=>x.cats.length);const c=b==="razno"?G.cats[G.cats.length-1]:G.cats[0];return c?c[0]:Object.keys(CATS)[0]}
 function draftSplit(){const by={};draft.items.forEach(it=>{const c=subBudget(it.sub);by[c]=(by[c]||0)+(+it.price||0)});
   Object.keys(by).forEach(k=>by[k]=Math.round(by[k]*100)/100);return by}
@@ -1109,7 +1135,7 @@ function showNoBudget(msg){
     try{const bid=await redeem(window.__fb,fbUser,code);await openBudget(window.__fb,bid)}catch(e){$("#nb_err").textContent=inviteErr(e);$("#nb_go").disabled=false}};
 }
 async function createOwnBudget(FB,user,inviteCode,migrating){
-  const bid=newId("b");const data={name:"Moj budžet",owner:user.uid,members:[user.uid],memberEmails:{[user.uid]:user.email||""},cats:DEFAULT_CATS,created:Date.now(),migrating:!!migrating};
+  const bid=newId("b");const data={name:"Moj budžet",owner:user.uid,members:[user.uid],memberEmails:{[user.uid]:user.email||""},cats:migrating?DEFAULT_CATS:TEMPLATE_CATS,incomeSources:DEFAULT_INC,created:Date.now(),migrating:!!migrating};
   if(inviteCode){data.invite=inviteCode;const bt=FB.writeBatch(FB.db);bt.set(FB.doc(FB.db,"budgets/"+bid),data);bt.update(FB.doc(FB.db,"invites/"+inviteCode),{usedBy:user.uid,usedAt:Date.now()});await bt.commit()}
   else await FB.setDoc(FB.doc(FB.db,"budgets/"+bid),data);
   return bid}
@@ -1149,14 +1175,14 @@ async function openBudget(FB,bid){
     if(d.migrating&&d.owner===user.uid){showBusy("Završavam prenos podataka…");await migrateLegacy(FB,user.uid,bid)}}catch(e){}
   BID=bid;document.body.classList.remove("nologin");
   months={};txs=[];accounts=[];transfers=[];subs=[];receipts=[];ruleMap={};
-  Object.keys(ready).forEach(k=>ready[k]=false);picked=false;render();
+  Object.keys(ready).forEach(k=>ready[k]=false);picked=false;tab="pregled";txView="troskovi";window.scrollTo(0,0);render();
   const base="budgets/"+bid+"/";const clean=d=>JSON.parse(JSON.stringify(d));
   const col=(c,fn,k)=>unsubs.push(FB.onSnapshot(FB.collection(FB.db,base+c),s=>fn(s.docs.map(d=>({...d.data(),id:d.id}))),e=>{console.error(c,e);ready[k]=true;render()}));
   store={setMonth:(k,d)=>FB.setDoc(FB.doc(FB.db,base+"months/"+k),clean(d)),setTx:r=>FB.setDoc(FB.doc(FB.db,base+"tx/"+r.id),clean(r)),delTx:id=>FB.deleteDoc(FB.doc(FB.db,base+"tx/"+id)),
     set:(c,r)=>FB.setDoc(FB.doc(FB.db,base+c+"/"+r.id),clean(r)),del:(c,id)=>FB.deleteDoc(FB.doc(FB.db,base+c+"/"+id)),
     setBudget:f=>FB.updateDoc(FB.doc(FB.db,"budgets/"+bid),clean(f))};
   unsubs.push(FB.onSnapshot(FB.doc(FB.db,"budgets/"+bid),s=>{if(!s.exists()||!(s.data().members||[]).includes(user.uid)){afterLogin(FB,user);return}
-    budgetDoc=s.data();setCats(budgetDoc.cats);ready.b=true;render()},e=>{console.error(e);afterLogin(FB,user)}));
+    budgetDoc=s.data();INC=Array.isArray(budgetDoc.incomeSources)&&budgetDoc.incomeSources.length?budgetDoc.incomeSources:DEFAULT_INC;setCats(budgetDoc.cats);ready.b=true;render()},e=>{console.error(e);afterLogin(FB,user)}));
   col("accounts",a=>{accounts=a;ready.a=true;render()},"a");
   col("receipts",a=>{receipts=a.map(r=>({...r,items:Array.isArray(r.items)?r.items:[]}));ready.p=true;render()},"p");
   col("subs",a=>{subs=a;ready.s=true;render()},"s");
