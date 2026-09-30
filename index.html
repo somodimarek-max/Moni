@@ -22,8 +22,10 @@ const CONFIG={
     projectId:"moni-42a31",
     appId:"1:302441198658:web:3b2e1a070c3b9ec200a9db"
   },
-  // adresa tvog Cloudflare Worker-a, npr. "https://ekasa-proxy.tvojnalog.workers.dev"
-  ekasaProxy:"https://ekasa-proxy.somodi-marek.workers.dev/"
+  // adresa Cloudflare Worker-a za eKasa
+  ekasaProxy:"https://ekasa-proxy.somodi-marek.workers.dev/",
+  // e-mail administratora (isti mora biti upisan i u Firestore pravilima)
+  adminEmail:"somodi.marek@gmail.com"
 };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -36,8 +38,10 @@ if(CONFIG.firebase.apiKey){
   const app=initializeApp(CONFIG.firebase);
   const auth=A.getAuth(app);
   let db;try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
-  window.__fb={db,doc:F.doc,setDoc:F.setDoc,deleteDoc:F.deleteDoc,collection:F.collection,onSnapshot:F.onSnapshot,
-    onAuth:cb=>A.onAuthStateChanged(auth,cb),signIn:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),signOut:()=>A.signOut(auth)};
+  window.__fb={db,doc:F.doc,setDoc:F.setDoc,getDoc:F.getDoc,getDocs:F.getDocs,updateDoc:F.updateDoc,deleteDoc:F.deleteDoc,collection:F.collection,query:F.query,where:F.where,limit:F.limit,
+    onSnapshot:F.onSnapshot,writeBatch:F.writeBatch,arrayUnion:F.arrayUnion,arrayRemove:F.arrayRemove,deleteField:F.deleteField,
+    onAuth:cb=>A.onAuthStateChanged(auth,cb),signIn:(e,p)=>A.signInWithEmailAndPassword(auth,e,p),signUp:(e,p)=>A.createUserWithEmailAndPassword(auth,e,p),
+    resetPw:e=>A.sendPasswordResetEmail(auth,e),signOut:()=>A.signOut(auth)};
   window.dispatchEvent(new Event("fb-ready"));
 }
 </script>
@@ -296,6 +300,23 @@ body.nologin .tabs,body.nologin .mbtn{visibility:hidden}
 html{padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;font-size:14px}
 img{max-width:100%}[hidden]{display:none!important}
+.plan-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 2px}
+.ce-group{border:1px solid var(--line);border-left:5px solid var(--gc);border-radius:14px;padding:10px;margin-bottom:10px}
+.ce-gh{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--gc);margin-bottom:6px}
+.ce-row{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--line)}
+.ce-row:first-of-type{border-top:0}
+.ce-name{font:inherit;font-weight:600;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px;width:100%}
+.ce-opts{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ce-opts select{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:5px 8px}
+.ce-opts .rv-x{margin-left:auto}
+.ce-del{background:var(--warn-bg);border-radius:12px;padding:10px;margin-bottom:10px}
+.ce-del select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px;width:100%}
+.invbox{margin-top:10px;background:var(--surface2);border:1px dashed var(--g1);border-radius:14px;padding:12px}
+.invcode{font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:.06em;margin-top:2px}
+.danger-link{color:var(--bad)}
+.rv-map span{display:flex;flex-direction:column;gap:4px}
+.rv-map select{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:220px}
+#bd_name,#bd_code,#nb_code{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
 </style>
 
 </head>
@@ -328,12 +349,78 @@ img{max-width:100%}[hidden]{display:none!important}
 
 <script>
 (function(){
-const GROUPS=[
-  {id:"osnovni",name:"Osnovni troškovi",rule:"Potrebe",rec:.5,color:"--g1",cats:[["hipoteka","Hipoteka"],["racuni","Računi"],["pretplate","Online pretplate"],["hrana","Hrana"]]},
-  {id:"licno",name:"Lično",rule:"Želje",rec:.3,color:"--g2",cats:[["cigare","Cigare"],["razno","Razno"]]},
-  {id:"invest",name:"Investicije i štednja",rule:"Štednja",rec:.2,color:"--g3",cats:[["etf","ETF"],["zlato","Investiciono zlato"]]}
-];
-const CATS={};GROUPS.forEach(g=>g.cats.forEach(([id,name],i)=>CATS[id]={id,name,group:g,shade:[1,.78,.58,.42][i]}));
+const GMETA=[
+ {id:"osnovni",name:"Osnovni troškovi",rule:"Potrebe",rec:.5,color:"--g1"},
+ {id:"licno",name:"Lično",rule:"Želje",rec:.3,color:"--g2"},
+ {id:"invest",name:"Investicije i štednja",rule:"Štednja",rec:.2,color:"--g3"}];
+const DEFAULT_CATS=[
+ {id:"osnovni",cats:[{id:"hipoteka",name:"Hipoteka"},{id:"racuni",name:"Računi",items:true},{id:"pretplate",name:"Online pretplate",items:true},{id:"hrana",name:"Hrana"}]},
+ {id:"licno",cats:[{id:"cigare",name:"Cigare"},{id:"razno",name:"Razno"}]},
+ {id:"invest",cats:[{id:"etf",name:"ETF"},{id:"zlato",name:"Investiciono zlato"}]}];
+let GROUPS=[],CATS={},CATINFO={},CATDEF=DEFAULT_CATS;
+function setCats(def){def=Array.isArray(def)&&def.length?def:DEFAULT_CATS;CATDEF=def;
+  GROUPS=GMETA.map(m=>{const g=def.find(x=>x.id===m.id)||{cats:[]};return{...m,cats:(g.cats||[]).map(c=>[c.id,c.name])}});
+  CATS={};CATINFO={};
+  GROUPS.forEach(g=>{const src=(def.find(x=>x.id===g.id)||{cats:[]}).cats||[];
+    g.cats.forEach(([id,name],i)=>{CATS[id]={id,name,group:g,shade:[1,.8,.62,.46,.34,.26][Math.min(i,5)]};CATINFO[id]=src[i]||{}})})}
+setCats(null);
+function catOptions(sel){return GROUPS.map(G=>`<optgroup label="${esc(G.name)}">${G.cats.map(([id,n])=>`<option value="${id}"${id===sel?" selected":""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}
+const slug=s=>norm(s).replace(/[^a-z0-9]+/g,"").slice(0,16)||"kat";
+/* ---------- category editor ---------- */
+let ed=null;
+function openCatEditor(){
+  ed={groups:GMETA.map(m=>{const g=CATDEF.find(x=>x.id===m.id)||{cats:[]};return{id:m.id,cats:(g.cats||[]).map(c=>({...c}))}}),deleted:[]};
+  renderCatEditor();
+}
+function usage(id){return{tx:txs.filter(t=>t.cat===id).length,subs:subs.filter(s=>(s.cat||"pretplate")===id).length}}
+function renderCatEditor(){
+  const y=$("#layer .sheet")?$("#layer .sheet").scrollTop:0;
+  const all=ed.groups.flatMap(g=>g.cats);
+  let h=`<div class="scrim" id="scrim"><form class="sheet" id="ceForm" role="dialog" aria-label="Uredi kategorije"><div class="grab"></div><h2>Kategorije</h2>
+   <p class="note" style="margin:-6px 0 12px">Promene važe za ceo budžet i sve njegove članove. Grupe odgovaraju pravilu 50/30/20.</p>`;
+  ed.groups.forEach((g,gi)=>{const M=GMETA[gi];
+    h+=`<div class="ce-group" style="--gc:var(${M.color})"><div class="ce-gh">${M.name}</div>`;
+    if(!g.cats.length)h+=`<p class="note" style="margin:4px 0 8px">Nema kategorija u ovoj grupi.</p>`;
+    g.cats.forEach((c,ci)=>{h+=`<div class="ce-row"><input class="ce-name" data-g="${gi}" data-c="${ci}" maxlength="30" value="${esc(c.name)}" aria-label="Naziv kategorije">
+      <div class="ce-opts"><label class="mini-sw"><input type="checkbox" data-items="${gi}:${ci}" ${c.items?"checked":""}> Lista stavki</label>
+      <select data-move="${gi}:${ci}" aria-label="Premesti u grupu">${GMETA.map((m,mi)=>`<option value="${mi}"${mi===gi?" selected":""}>${m.rule}</option>`).join("")}</select>
+      <button type="button" class="rv-x" data-cdel="${gi}:${ci}" aria-label="Obriši kategoriju">×</button></div></div>`});
+    h+=`<button type="button" class="linkbtn" data-cadd="${gi}" style="margin:6px 2px 4px">+ Dodaj kategoriju</button></div>`});
+  const needMove=ed.deleted.filter(d=>d.use.tx||d.use.subs);
+  if(needMove.length){h+=`<div class="ce-del"><div class="lbl" style="margin-bottom:6px">Obrisane kategorije sa troškovima</div>`;
+    needMove.forEach((d,i)=>{h+=`<div class="inrow"><label class="lbl" for="mv_${i}">„${esc(d.name)}“ (${d.use.tx} troškova${d.use.subs?", "+d.use.subs+" stavki":""}) premesti u</label>
+      <select id="mv_${i}" data-mvto="${esc(d.id)}">${all.map(c=>`<option value="${c.id}"${c.id===d.target?" selected":""}>${esc(c.name)}</option>`).join("")}</select></div>`});
+    h+=`</div>`}
+  h+=`<div class="err" id="ce_err"></div><div class="actions"><button class="btn primary" type="submit">Sačuvaj kategorije</button><button class="btn ghost" type="button" id="ce_cancel">Otkaži</button></div></form></div>`;
+  $("#layer").innerHTML=h;if($("#layer .sheet"))$("#layer .sheet").scrollTop=y;
+  $("#ce_cancel").onclick=()=>{ed=null;$("#layer").innerHTML=""};
+  document.querySelectorAll("#ceForm .ce-name").forEach(el=>el.oninput=()=>{ed.groups[+el.dataset.g].cats[+el.dataset.c].name=el.value});
+  document.querySelectorAll("#ceForm [data-items]").forEach(el=>el.onchange=()=>{const[g,c]=el.dataset.items.split(":").map(Number);ed.groups[g].cats[c].items=el.checked});
+  document.querySelectorAll("#ceForm [data-move]").forEach(el=>el.onchange=()=>{const[g,c]=el.dataset.move.split(":").map(Number);const to=+el.value;if(to===g)return;
+    const [cat]=ed.groups[g].cats.splice(c,1);ed.groups[to].cats.push(cat);renderCatEditor()});
+  document.querySelectorAll("#ceForm [data-cdel]").forEach(el=>el.onclick=()=>{const[g,c]=el.dataset.cdel.split(":").map(Number);
+    const [cat]=ed.groups[g].cats.splice(c,1);const u=usage(cat.id);
+    if(!cat._new){const rest=ed.groups.flatMap(x=>x.cats);ed.deleted.push({id:cat.id,name:cat.name,use:u,target:(rest[0]||{}).id})}renderCatEditor()});
+  document.querySelectorAll("#ceForm [data-cadd]").forEach(el=>el.onclick=()=>{const g=+el.dataset.cadd;
+    ed.groups[g].cats.push({id:"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:"",_new:true});renderCatEditor();
+    const ins=document.querySelectorAll(`#ceForm .ce-name[data-g="${g}"]`);if(ins.length)ins[ins.length-1].focus()});
+  document.querySelectorAll("#ceForm [data-mvto]").forEach(el=>el.onchange=()=>{const d=ed.deleted.find(x=>x.id===el.dataset.mvto);if(d)d.target=el.value});
+  $("#ceForm").onsubmit=async e=>{e.preventDefault();
+    const all2=ed.groups.flatMap(g=>g.cats);
+    if(!all2.length){$("#ce_err").textContent="Budžet mora imati bar jednu kategoriju.";return}
+    if(all2.some(c=>!c.name.trim())){$("#ce_err").textContent="Svaka kategorija mora imati naziv.";return}
+    const names=all2.map(c=>norm(c.name.trim()));if(new Set(names).size!==names.length){$("#ce_err").textContent="Dve kategorije imaju isti naziv.";return}
+    const moves=ed.deleted.filter(d=>(d.use.tx||d.use.subs));
+    if(moves.some(d=>!all2.find(c=>c.id===d.target))){$("#ce_err").textContent="Izaberi gde da se premeste troškovi obrisanih kategorija.";return}
+    const cats=ed.groups.map(g=>({id:g.id,cats:g.cats.map(c=>{const o={id:c._new?slug(c.name)+"_"+c.id.slice(-4):c.id,name:c.name.trim().slice(0,30)};if(c.items)o.items=true;return o})}));
+    const btn=$("#ceForm .btn.primary");btn.disabled=true;btn.textContent="Čuvam…";
+    try{await store.setBudget({cats});
+      for(const d of moves){for(const t of txs.filter(t=>t.cat===d.id))await store.setTx({...t,cat:d.target});
+        for(const s of subs.filter(s=>(s.cat||"pretplate")===d.id))await store.set("subs",{...s,cat:d.target})}
+      ed=null;$("#layer").innerHTML="";toast("Kategorije sačuvane")}
+    catch(err){btn.disabled=false;btn.textContent="Sačuvaj kategorije";$("#ce_err").textContent=errMsg(err)}};
+}
+
 const MONTHS=["januar","februar","mart","april","maj","jun","jul","avgust","septembar","oktobar","novembar","decembar"];
 const DAYS=["nedelja","ponedeljak","utorak","sreda","četvrtak","petak","subota"];
 const nf=new Intl.NumberFormat("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -347,7 +434,7 @@ const mkey=d=>d.slice(0,7);
 const shift=(k,n)=>{let[y,m]=k.split("-").map(Number);m+=n;while(m>12){m-=12;y++}while(m<1){m+=12;y--}return y+"-"+String(m).padStart(2,"0")};
 const mTitle=k=>{const[y,m]=k.split("-");return MONTHS[m-1].toUpperCase()+" "+y};
 
-let months={},txs=[],accounts=[],transfers=[],subs=[],cur=mkey(todayISO()),tab="pregled",ready={m:false,t:false,a:false,r:false,s:false,p:false},store=null,localMode=false,readOnly=false,picked=false;
+let months={},txs=[],accounts=[],transfers=[],subs=[],cur=mkey(todayISO()),tab="pregled",ready={m:false,t:false,a:false,r:false,s:false,p:false,b:false},store=null,localMode=false,readOnly=false,picked=false;
 const ATYPES={
   kartica:{name:"Kartica",ic:"KA",inc:true,color:"--g1"},
   tekuci:{name:"Tekući račun",ic:"TR",inc:true,color:"--g1"},
@@ -398,7 +485,7 @@ function render(){
   $("#viewName").textContent={pregled:"Pregled",transakcije:"Transakcije",plan:"Plan budžeta",racuni:"Moji računi"}[tab];
   $("#prevM").classList.toggle("off",accTab);$("#nextM").classList.toggle("off",accTab);
   document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
-  if(!(ready.m&&ready.t&&ready.a&&ready.r&&ready.s&&ready.p)){$("#main").innerHTML='<div class="loading">Učitavam budžet…</div>';return}
+  if(!(ready.m&&ready.t&&ready.a&&ready.r&&ready.s&&ready.p&&ready.b)){$("#main").innerHTML='<div class="loading">Učitavam budžet…</div>';return}
   const c=calc(cur);let h="";
   if(localMode)h+='<div class="banner">Podaci se sada čuvaju samo u ovom pregledaču. Otvori aplikaciju prijavljen na claude.ai da bi se čuvali trajno i na svim uređajima.</div>';
   if(readOnly)h+='<div class="banner">Imaš pristup samo za čitanje, pa izmene neće biti sačuvane.</div>';
@@ -489,14 +576,14 @@ function viewTx(c){
 }
 function viewPlan(c){
   const m=c.m;
-  let h=`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
+  let h=`<div class="plan-top"><span class="lbl">${esc(budgetDoc.name||"Budžet")}${(budgetDoc.members||[]).length>1?" · "+(budgetDoc.members||[]).length+" člana":""}</span><button type="button" class="linkbtn" id="catEdit">Uredi kategorije</button></div>`+`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
    <div class="field"><label for="p_income">Mesečni prihod</label><span class="money"><input id="p_income" inputmode="decimal" value="${nf.format(m.income||0)}"><span>€</span></span></div>
    <div class="field"><label for="p_carry">Preneto iz prethodnog meseca<small>Prazno = automatski (${eur(c.autoCarry?c.carry:0)})</small></label><span class="money"><input id="p_carry" inputmode="decimal" placeholder="auto" value="${typeof m.carry==="number"?nf.format(m.carry):""}"><span>€</span></span></div></section>`;
   GROUPS.forEach(G=>{h+=`<section class="card" style="border-left:5px solid var(${G.color})"><h2 class="sec-title" style="color:var(${G.color})">${G.name}</h2>`;
     G.cats.forEach(([id,name])=>{
-      const lab=LISTS[id]?subsToggle(id,name):`<label for="b_${id}">${name}</label>`;
+      const lab=listCfg(id)?subsToggle(id,name):`<label for="b_${id}">${name}</label>`;
       h+=`<div class="field">${lab}<span class="money"><input id="b_${id}" data-cat="${id}" inputmode="decimal" value="${nf.format((m.budgets||{})[id]||0)}"><span>€</span></span></div>`;
-      if(LISTS[id]&&subsOpen[id])h+=subsBlock(id,(m.budgets||{})[id]||0)});
+      if(listCfg(id)&&subsOpen[id])h+=subsBlock(id,(m.budgets||{})[id]||0)});
     h+=`</section>`});
   h+=`<div class="err" id="planErr"></div><button class="btn primary" id="savePlan">Sačuvaj plan za ${MONTHS[+cur.slice(5)-1]}</button>`;
   if(!m._exists)h+=`<p class="note">Ovaj mesec još nema svoj plan, pa su iznosi preuzeti iz najbližeg meseca. Sačuvaj da ga zaključaš.</p>`;
@@ -526,10 +613,14 @@ const LISTS={
     newT:"Novi račun za plaćanje",editT:"Izmeni račun",ph:"npr. Struja, Internet, Voda",saveNew:"Dodaj račun",del:"Obriši račun",tDel:"Račun obrisan",tSave:"Račun sačuvan",tAdd:"Račun dodat",dayL:"Dan dospeća u mesecu (1–31)",nameErr:"Upiši naziv računa."}};
 const subCat=x=>x.cat||"pretplate";
 const listFor=cat=>subs.filter(x=>subCat(x)===cat);
-const subsOpen={pretplate:false,racuni:false};
+const subsOpen={};
+function genericList(n){return{title:"Pojedinačne stavke",one:"stavka",few:"stavke",many:"stavki",add:"+ Dodaj stavku",empty:"Dodaj pojedinačne stavke za „"+n+"“ sa danom plaćanja.",
+  newT:"Nova stavka",editT:"Izmeni stavku",ph:"npr. naziv",saveNew:"Dodaj stavku",del:"Obriši stavku",tDel:"Stavka obrisana",tSave:"Stavka sačuvana",tAdd:"Stavka dodata",dayL:"Dan plaćanja u mesecu (1–31)",nameErr:"Upiši naziv."}}
+function listCfg(cat){if(!CATINFO[cat]||!CATINFO[cat].items)return null;return LISTS[cat]||genericList(CATS[cat].name)}
+const listAny=cat=>listCfg(cat)||LISTS[cat]||genericList((CATS[cat]||{name:""}).name);
 function subsToggle(cat,name){
-  const L_=LISTS[cat],arr=listFor(cat),n_=arr.length;
-  let info=n_?n_+" "+(n_===1?L_.one:(n_%10>=2&&n_%10<=4&&(n_%100<10||n_%100>20))?L_.few:L_.many):(cat==="racuni"?"Dodaj račune":"Dodaj pretplate");
+  const L_=listAny(cat),arr=listFor(cat),n_=arr.length;
+  let info=n_?n_+" "+(n_===1?L_.one:(n_%10>=2&&n_%10<=4&&(n_%100<10||n_%100>20))?L_.few:L_.many):L_.add.replace(/^\+ /,"");
   let cls="";
   if(n_){const n=arr.map(x=>({x,u:subDue(x.day)})).sort((a,b)=>a.u.days-b.u.days)[0];cls=subState(n.x).cls;
     info+=" · sledeći: "+esc(n.x.name)+" "+(n.u.days===0?"danas":n.u.days===1?"sutra":"za "+n.u.days+" dana")}
@@ -538,7 +629,7 @@ function subsToggle(cat,name){
 let subSort=true;try{subSort=localStorage.getItem("budzet-subsort")!=="0"}catch(e){}
 function subsSorted(arr){return arr.slice().sort(subSort?((a,b)=>a.day-b.day||a.name.localeCompare(b.name)):((a,b)=>(a.created||0)-(b.created||0)))}
 function subsBlock(cat,budget){
-  const L_=LISTS[cat],arr=listFor(cat),total=arr.reduce((s,x)=>s+(+x.amount||0),0);
+  const L_=listAny(cat),arr=listFor(cat),total=arr.reduce((s,x)=>s+(+x.amount||0),0);
   let h=`<div class="subs" id="subs_${cat}"><div class="subs-head"><span class="lbl">${L_.title}</span><label class="mini-sw"><input type="checkbox" class="subSort" ${subSort?"checked":""}> Po datumu</label></div>`;
   if(!arr.length)h+=`<p class="note" style="margin:4px 0 10px">${L_.empty}</p>`;
   else{h+=`<div class="sublist">`;subsSorted(arr).forEach(s=>{const st=subState(s);
@@ -548,7 +639,7 @@ function subsBlock(cat,budget){
   return h+`<button type="button" class="btn ghost" data-addsub="${cat}" style="padding:10px;font-size:14px">${L_.add}</button></div>`;
 }
 function openSubSheet(s,cat){
-  const edit=!!s;cat=s?subCat(s):cat;const L_=LISTS[cat];
+  const edit=!!s;cat=s?subCat(s):cat;const L_=listAny(cat);
   $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="subForm" role="dialog" aria-label="${edit?L_.editT:L_.newT}">
    <div class="grab"></div><h2>${edit?L_.editT:L_.newT}</h2>
    <div class="amt-in"><input id="s_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${s?nf.format(s.amount):""}"><span>€</span></div>
@@ -577,6 +668,7 @@ function openSubSheet(s,cat){
 let planDirty={},planDirtyKey="";
 function bindPlan(){
   bindSettings();
+  if($("#catEdit"))$("#catEdit").onclick=openCatEditor;
   if(planDirtyKey!==cur){planDirty={};planDirtyKey=cur}
   Object.entries(planDirty).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v});
   document.querySelectorAll("#p_income,#p_carry,[data-cat]").forEach(el=>el.addEventListener("input",()=>{planDirty[el.id]=el.value}));
@@ -790,6 +882,9 @@ async function loadById(id){
     const b=document.createElement("button");b.className="btn primary";b.type="button";b.textContent="Probaj ponovo";b.onclick=()=>loadById(id);$("#layer .actions").prepend(b)}
 }
 
+const BUCKET={hrana:"Namirnice",cigare:"Cigare i duvan",razno:"Higijena, kuća i ostalo"};
+function rmapFor(b){const m=(draft&&draft.map&&draft.map[b])||(budgetDoc.receiptMap||{})[b];if(m&&CATS[m])return m;if(CATS[b])return b;
+  const G=GROUPS.find(x=>x.id===(b==="hrana"?"osnovni":"licno")&&x.cats.length)||GROUPS.find(x=>x.cats.length);const c=b==="razno"?G.cats[G.cats.length-1]:G.cats[0];return c?c[0]:Object.keys(CATS)[0]}
 function draftSplit(){const by={};draft.items.forEach(it=>{const c=subBudget(it.sub);by[c]=(by[c]||0)+(+it.price||0)});
   Object.keys(by).forEach(k=>by[k]=Math.round(by[k]*100)/100);return by}
 function openReview(){
@@ -809,12 +904,13 @@ function openReview(){
     ${draft.total!=null?`<div class="kv"><span>Ukupno na računu</span><b>${eur(draft.total)}</b></div>`:""}
     ${Math.abs(diff)>=.01?`<div class="rv-warn">Razlika ${eur(diff)}: proveri da li je neki artikal preskočen ili pogrešno pročitan.</div>`:draft.total!=null?`<div class="rv-ok">✓ Zbir se slaže sa računom</div>`:""}
     <div class="lbl" style="margin:10px 0 4px">Upisuje se u budžet</div>
-    ${Object.entries(split).map(([k,v])=>`<div class="kv"><span>${CATS[k].name}</span><b>${eur(v)}</b></div>`).join("")}</div>
+    ${Object.entries(split).map(([k,v])=>`<div class="kv rv-map"><span>${BUCKET[k]||k}<select data-map="${k}" aria-label="Kategorija budžeta za ${BUCKET[k]||k}">${catOptions(rmapFor(k))}</select></span><b>${eur(v)}</b></div>`).join("")}</div>
    ${accounts.length?`<div class="inrow" style="margin-top:10px"><label class="lbl" for="rv_acc">Plaćeno sa</label><select id="rv_acc">${accOptions(draft.account,true)}</select></div>`:""}
    <div class="err" id="rv_err"></div>
    <div class="actions"><button class="btn primary" type="submit">Sačuvaj račun</button><button class="btn ghost" type="button" id="rv_cancel">Otkaži</button></div></form></div>`;
   const keep=()=>{draft.store=$("#rv_store").value;draft.date=$("#rv_date").value;if($("#rv_acc"))draft.account=$("#rv_acc").value};
   $("#rv_cancel").onclick=()=>{draft=null;$("#layer").innerHTML=""};
+  document.querySelectorAll("#rvForm [data-map]").forEach(el=>el.onchange=()=>{draft.map=draft.map||{};draft.map[el.dataset.map]=el.value});
   document.querySelectorAll("#rvForm [data-f]").forEach(el=>{const ev=el.tagName==="SELECT"?"change":"input";el.addEventListener(ev,()=>{const it=draft.items[+el.dataset.i],f=el.dataset.f;
     if(f==="price"){const v=parseNum(el.value);it.price=isNaN(v)?0:Math.round(v*100)/100}else it[f]=el.value;
     if(f!=="name"){keep();const y=$(".sheet").scrollTop;openReview();$(".sheet").scrollTop=y}})});
@@ -831,12 +927,15 @@ async function saveReceipt(){
   const old=draft.id?receipts.find(r=>r.id===draft.id):null;
   const id=draft.id||newId("p"),now=Date.now(),split=draftSplit(),txIds=[];
   if(old)for(const tid of (old.txIds||[]))await store.del("tx",tid);
-  let n=0;for(const [cat,amt] of Object.entries(split)){if(amt<=0)continue;const tid=id+"_"+cat;txIds.push(tid);
-    await store.setTx({id:tid,date:draft.date,month:mkey(draft.date),cat,desc:draft.store.trim()+(cat==="hrana"?"":" · "+CATS[cat].name.toLowerCase()),amount:amt,created:(old&&old.created||now)+(n++),account:draft.account||"",receipt:id})}
+  const byCat={},first={};Object.entries(split).forEach(([b,amt])=>{const c=rmapFor(b);byCat[c]=Math.round(((byCat[c]||0)+amt)*100)/100;if(!(c in first))first[c]=b});
+  const newMap={...(budgetDoc.receiptMap||{})};Object.keys(split).forEach(b=>newMap[b]=rmapFor(b));
+  let n=0;for(const [cat,amt] of Object.entries(byCat)){if(amt<=0)continue;const tid=id+"_"+cat;txIds.push(tid);
+    await store.setTx({id:tid,date:draft.date,month:mkey(draft.date),cat,desc:draft.store.trim()+(first[cat]==="hrana"?"":" · "+CATS[cat].name.toLowerCase()),amount:amt,created:(old&&old.created||now)+(n++),account:draft.account||"",receipt:id})}
   await store.set("receipts",{id,store:draft.store.trim()||"Prodavnica",date:draft.date,month:mkey(draft.date),total:draft.total,account:draft.account||"",
     items:draft.items.map(it=>({name:String(it.name).trim().slice(0,60)||"Stavka",raw:it.raw||"",qty:+it.qty||1,price:+it.price||0,sub:it.sub})),txIds,created:old&&old.created||now,ekasaId:draft.ekasaId||(old&&old.ekasaId)||""});
   const learned={};draft.items.forEach(it=>{const k=norm(it.raw||it.name).trim();if(!k)return;const auto=ruleMap[k]||it.auto;if(it.sub!==auto||(ruleMap[k]&&ruleMap[k]!==it.sub))learned[k]=it.sub});
   for(const [k,sub] of Object.entries(learned)){try{await store.set("catrules",{id:hashKey(k),k,sub});ruleMap[k]=sub}catch(e){}}
+  if(JSON.stringify(newMap)!==JSON.stringify(budgetDoc.receiptMap||{})){try{await store.setBudget({receiptMap:newMap})}catch(e){}}
   if(draft.account){lastAcc=draft.account;try{localStorage.setItem("budzet-lastacc",lastAcc)}catch(e){}}
   if(mkey(draft.date)!==cur){cur=mkey(draft.date);picked=true;render()}
 }
@@ -945,67 +1044,180 @@ $("#main").addEventListener("click",e=>{
 });
 function pickStart(){if(picked)return;const keys=Object.keys(months).sort();if(keys.length&&!months[cur]&&cur<keys[0])cur=keys[0]}
 
-/* ---------- storage (Firebase) ---------- */
-let fbUser=null,unsubs=[];
-function fbShim(FB,uid){const base="users/"+uid+"/";const clean=d=>JSON.parse(JSON.stringify(d));
-  return{doc:p=>({set:d=>FB.setDoc(FB.doc(FB.db,base+p),clean(d)),delete:()=>FB.deleteDoc(FB.doc(FB.db,base+p))}),
-    collection:p=>({onSnapshot:(next,err)=>FB.onSnapshot(FB.collection(FB.db,base+p),s=>next({docs:s.docs.map(d=>({id:d.id,data:()=>d.data()}))}),err)})}}
-function showLogin(msg){
-  document.body.classList.add("nologin");
-  $("#monthTitle").textContent="BUDŽETIRANJE";$("#viewName").textContent="Prijava";
-  $("#main").innerHTML=`<section class="card login"><h2 class="sec-title">Prijavi se</h2>
-   <form id="loginForm"><div class="inrow"><label class="lbl" for="lg_email">E-mail</label><input id="lg_email" type="email" autocomplete="username" required></div>
-   <div class="inrow"><label class="lbl" for="lg_pass">Lozinka</label><input id="lg_pass" type="password" autocomplete="current-password" required></div>
-   <div class="err" id="lg_err">${esc(msg||"")}</div><button class="btn primary" type="submit">Prijavi se</button></form>
-   <p class="note">Nalog se pravi u Firebase konzoli (Authentication → Users → Add user). Vidi korak 4 u uputstvu.</p></section>`;
-  $("#loginForm").onsubmit=async e=>{e.preventDefault();$("#lg_err").textContent="";
-    try{await window.__fb.signIn($("#lg_email").value.trim(),$("#lg_pass").value)}
-    catch(err){$("#lg_err").textContent=/invalid|wrong|not-found|credential/.test(err.code||"")?"Pogrešan e-mail ili lozinka.":/too-many/.test(err.code||"")?"Previše pokušaja. Sačekaj malo.":"Prijava nije uspela ("+(err.code||"greška")+")."}};
+/* ---------- storage (Firebase, shared budgets) ---------- */
+let fbUser=null,unsubs=[],BID=null,budgetDoc={},myBudgets=[],myInvites=[],pendingInvite=null,lastShownInvite=null;
+const LEGACY=["months","tx","accounts","transfers","subs","receipts","catrules"];
+const isAdminEmail=e=>!!e&&!!CONFIG.adminEmail&&e.toLowerCase()===CONFIG.adminEmail.toLowerCase();
+const cleanCode=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+const fmtCode=c=>c.length>5?c.slice(0,5)+"-"+c.slice(5):c;
+function genCode(){const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";const r=new Uint32Array(10);crypto.getRandomValues(r);return [...r].map(x=>A[x%A.length]).join("")}
+function stopSubs(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
+function screen(title,html){document.body.classList.add("nologin");$("#monthTitle").textContent="BUDŽETIRANJE";$("#viewName").textContent=title;$("#main").innerHTML=html;$("#layer").innerHTML=""}
+function showBusy(msg){screen("Učitavam",`<div class="loading">${esc(msg||"Učitavam…")}</div>`)}
+function authErr(err){const c=(err&&err.code)||"";
+  if(/invalid-credential|wrong-password|user-not-found|invalid-email/.test(c))return"Pogrešan e-mail ili lozinka.";
+  if(/email-already-in-use/.test(c))return"Nalog sa ovim e-mailom već postoji. Prijavi se, pa unesi kod.";
+  if(/weak-password/.test(c))return"Lozinka mora imati bar 6 znakova.";
+  if(/too-many/.test(c))return"Previše pokušaja. Sačekaj malo.";
+  if(/network/.test(c))return"Nema internet veze.";
+  return"Nije uspelo ("+(c||"greška")+").";}
+function inviteErr(e){const c=e&&e.code;
+  if(c==="inv-missing")return"Kod ne postoji. Proveri da li je dobro prepisan.";
+  if(c==="inv-used")return"Ovaj kod je već iskorišćen. Zatraži novi.";
+  if(c==="permission-denied")return"Kod nije prihvaćen (možda je upravo iskorišćen). Zatraži novi.";
+  return"Kod nije prihvaćen ("+(c||"greška")+").";}
+async function checkInvite(FB,code){const s=await FB.getDoc(FB.doc(FB.db,"invites/"+code));if(!s.exists())throw{code:"inv-missing"};const iv=s.data();if(iv.usedBy)throw{code:"inv-used"};return iv}
+function showLogin(msg,mode){
+  const q=new URLSearchParams(location.search).get("kod");mode=mode||(q?"reg":"login");
+  screen(mode==="reg"?"Registracija":"Prijava",`<section class="card login">
+   <div class="seg" role="tablist" style="margin-bottom:14px"><button type="button" role="tab" data-lm="login" aria-selected="${mode==="login"}">Prijava</button><button type="button" role="tab" data-lm="reg" aria-selected="${mode==="reg"}">Registracija</button></div>
+   <form id="loginForm">
+   ${mode==="reg"?`<div class="inrow"><label class="lbl" for="lg_code">Kod za poziv</label><input id="lg_code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX" value="${esc(q?fmtCode(cleanCode(q)):"")}" required></div>`:""}
+   <div class="inrow"><label class="lbl" for="lg_email">E-mail</label><input id="lg_email" type="email" autocomplete="username" required></div>
+   <div class="inrow"><label class="lbl" for="lg_pass">Lozinka${mode==="reg"?" (bar 6 znakova)":""}</label><input id="lg_pass" type="password" autocomplete="${mode==="reg"?"new-password":"current-password"}" required></div>
+   <div class="err" id="lg_err">${esc(msg||"")}</div>
+   <button class="btn primary" type="submit">${mode==="reg"?"Napravi nalog":"Prijavi se"}</button></form>
+   ${mode==="login"?`<button type="button" class="linkbtn" id="lg_reset" style="margin-top:12px">Zaboravljena lozinka?</button>`:`<p class="note">Aplikacija radi samo uz poziv. Kod dobijaš od osobe koja te poziva.</p>`}</section>`);
+  document.querySelectorAll("[data-lm]").forEach(b=>b.onclick=()=>showLogin("",b.dataset.lm));
+  const FB=window.__fb;
+  if($("#lg_reset"))$("#lg_reset").onclick=async()=>{const em=$("#lg_email").value.trim();if(!em){$("#lg_err").textContent="Upiši e-mail, pa klikni ponovo.";return}
+    try{await FB.resetPw(em);$("#lg_err").textContent="";toast("Poslali smo link za novu lozinku na "+em)}catch(err){$("#lg_err").textContent=authErr(err)}};
+  $("#loginForm").onsubmit=async e=>{e.preventDefault();$("#lg_err").textContent="";const btn=$("#loginForm .btn");btn.disabled=true;
+    const em=$("#lg_email").value.trim(),pw=$("#lg_pass").value;
+    try{if(mode==="reg"){const code=cleanCode($("#lg_code").value);
+        try{await checkInvite(FB,code)}catch(ie){$("#lg_err").textContent=inviteErr(ie);btn.disabled=false;return}
+        pendingInvite=code;await FB.signUp(em,pw)}
+      else await FB.signIn(em,pw)}
+    catch(err){pendingInvite=null;$("#lg_err").textContent=authErr(err);btn.disabled=false}};
 }
-function showSetup(){document.body.classList.add("nologin");$("#monthTitle").textContent="BUDŽETIRANJE";$("#viewName").textContent="Podešavanje";
-  $("#main").innerHTML=`<section class="card"><h2 class="sec-title">Aplikacija još nije povezana</h2><p>Upiši Firebase podatke u <b>CONFIG</b> na vrhu fajla <b>index.html</b> (korak 3 u uputstvu), pa ponovo otvori stranicu.</p></section>`}
-function startData(FB,user){
-  fbUser=user;document.body.classList.remove("nologin");
-  unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[];
-  Object.keys(ready).forEach(k=>ready[k]=false);ready.c=false;render();
-  const db=fbShim(FB,user.uid);
-  store={setMonth:(k,d)=>db.doc("months/"+k).set(d),setTx:r=>db.doc("tx/"+r.id).set(r),delTx:id=>db.doc("tx/"+id).delete(),
-    set:(c,r)=>db.doc(c+"/"+r.id).set(r),del:(c,id)=>db.doc(c+"/"+id).delete()};
-  const er=k=>e=>{console.error(e);ready[k]=true;render()};
-  unsubs.push(db.collection("accounts").onSnapshot(s=>{accounts=s.docs.map(d=>({...d.data(),id:d.id}));ready.a=true;render()},er("a")));
-  unsubs.push(db.collection("receipts").onSnapshot(s=>{receipts=s.docs.map(d=>({...d.data(),id:d.id,items:Array.isArray(d.data().items)?d.data().items:[]}));ready.p=true;render()},er("p")));
-  unsubs.push(db.collection("subs").onSnapshot(s=>{subs=s.docs.map(d=>({...d.data(),id:d.id}));ready.s=true;render()},er("s")));
-  unsubs.push(db.collection("transfers").onSnapshot(s=>{transfers=s.docs.map(d=>({...d.data(),id:d.id}));ready.r=true;render()},er("r")));
-  unsubs.push(db.collection("months").onSnapshot(s=>{const o={};s.docs.forEach(d=>o[d.id]=d.data());months=o;ready.m=true;pickStart();render()},er("m")));
-  unsubs.push(db.collection("tx").onSnapshot(s=>{txs=s.docs.map(d=>({...d.data(),id:d.id}));ready.t=true;render()},er("t")));
-  unsubs.push(db.collection("catrules").onSnapshot(s=>{const o={};s.docs.forEach(d=>{const x=d.data();if(x.k&&x.sub)o[x.k]=x.sub});ruleMap=o;ready.c=true},er("c")));
+function showNoBudget(msg){
+  screen("Poziv",`<section class="card"><h2 class="sec-title">Unesi kod za poziv</h2>
+   <p class="note" style="margin:0 0 10px">Prijavljen si kao ${esc(fbUser&&fbUser.email||"")}, ali još nisi član nijednog budžeta.</p>
+   <div class="inrow"><label class="lbl" for="nb_code">Kod</label><input id="nb_code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX"></div>
+   <div class="err" id="nb_err">${esc(msg||"")}</div><button class="btn primary" type="button" id="nb_go">Pridruži se</button>
+   <button class="btn ghost" type="button" id="nb_out" style="margin-top:8px">Odjavi se</button></section>`);
+  $("#nb_out").onclick=()=>window.__fb.signOut();
+  $("#nb_go").onclick=async()=>{const code=cleanCode($("#nb_code").value);if(!code)return;$("#nb_go").disabled=true;
+    try{const bid=await redeem(window.__fb,fbUser,code);await openBudget(window.__fb,bid)}catch(e){$("#nb_err").textContent=inviteErr(e);$("#nb_go").disabled=false}};
+}
+async function createOwnBudget(FB,user,inviteCode,migrating){
+  const bid=newId("b");const data={name:"Moj budžet",owner:user.uid,members:[user.uid],memberEmails:{[user.uid]:user.email||""},cats:DEFAULT_CATS,created:Date.now(),migrating:!!migrating};
+  if(inviteCode){data.invite=inviteCode;const bt=FB.writeBatch(FB.db);bt.set(FB.doc(FB.db,"budgets/"+bid),data);bt.update(FB.doc(FB.db,"invites/"+inviteCode),{usedBy:user.uid,usedAt:Date.now()});await bt.commit()}
+  else await FB.setDoc(FB.doc(FB.db,"budgets/"+bid),data);
+  return bid}
+async function redeem(FB,user,code){
+  const iv=await checkInvite(FB,code);
+  if(iv.type==="new")return createOwnBudget(FB,user,code,false);
+  const bt=FB.writeBatch(FB.db);
+  bt.update(FB.doc(FB.db,"budgets/"+iv.budgetId),{members:FB.arrayUnion(user.uid),["memberEmails."+user.uid]:user.email||"",joinInvite:code});
+  bt.update(FB.doc(FB.db,"invites/"+code),{usedBy:user.uid,usedAt:Date.now()});
+  await bt.commit();return iv.budgetId}
+async function hasLegacy(FB,uid){for(const c of ["months","accounts","subs","tx"]){try{const s=await FB.getDocs(FB.query(FB.collection(FB.db,"users/"+uid+"/"+c),FB.limit(1)));if(!s.empty)return true}catch(e){}}return false}
+async function migrateLegacy(FB,uid,bid){
+  let bt=FB.writeBatch(FB.db),n=0;
+  for(const c of LEGACY){let s;try{s=await FB.getDocs(FB.collection(FB.db,"users/"+uid+"/"+c))}catch(e){continue}
+    for(const d of s.docs){bt.set(FB.doc(FB.db,"budgets/"+bid+"/"+c+"/"+d.id),d.data());if(++n%400===0){await bt.commit();bt=FB.writeBatch(FB.db)}}}
+  await bt.commit();await FB.updateDoc(FB.doc(FB.db,"budgets/"+bid),{migrating:false});return n}
+async function afterLogin(FB,user){
+  fbUser=user;stopSubs();lastShownInvite=null;myInvites=[];myBudgets=[];showBusy("Učitavam budžet…");
+  const uref=FB.doc(FB.db,"users/"+user.uid);let bid=null;
+  try{const s=await FB.getDoc(uref);bid=s.exists()?s.data().budgetId:null}catch(e){}
+  if(bid){try{const b=await FB.getDoc(FB.doc(FB.db,"budgets/"+bid));if(!b.exists())bid=null}catch(e){bid=null}}
+  if(!bid){try{const q=await FB.getDocs(FB.query(FB.collection(FB.db,"budgets"),FB.where("members","array-contains",user.uid)));if(!q.empty)bid=q.docs[0].id}catch(e){}}
+  if(pendingInvite){const code=pendingInvite;pendingInvite=null;
+    try{bid=await redeem(FB,user,code)}catch(e){if(!bid){fbUser=user;showNoBudget(inviteErr(e));return}}}
+  if(!bid){const legacy=await hasLegacy(FB,user.uid);
+    if(legacy||isAdminEmail(user.email)){
+      try{showBusy(legacy?"Prebacujem tvoje podatke u novi oblik…":"Pravim tvoj budžet…");bid=await createOwnBudget(FB,user,null,legacy);
+        if(legacy)await migrateLegacy(FB,user.uid,bid)}
+      catch(e){console.error(e);screen("Greška",`<section class="card"><h2 class="sec-title">Budžet nije napravljen</h2><p>Proveri da su nova Firestore pravila objavljena i da je u njima upisan tvoj e-mail kao administrator (${esc(user.email||"")}).</p><p class="note">Greška: ${esc(e.code||e.message||"")}</p><button class="btn ghost" type="button" onclick="window.__fb.signOut()">Odjavi se</button></section>`);return}}}
+  if(!bid){showNoBudget();return}
+  await openBudget(FB,bid);
+}
+async function openBudget(FB,bid){
+  const user=fbUser;stopSubs();
+  await FB.setDoc(FB.doc(FB.db,"users/"+user.uid),{budgetId:bid,email:user.email||""},{merge:true}).catch(()=>{});
+  try{const b=await FB.getDoc(FB.doc(FB.db,"budgets/"+bid));const d=b.exists()?b.data():{};
+    if(d.migrating&&d.owner===user.uid){showBusy("Završavam prenos podataka…");await migrateLegacy(FB,user.uid,bid)}}catch(e){}
+  BID=bid;document.body.classList.remove("nologin");
+  months={};txs=[];accounts=[];transfers=[];subs=[];receipts=[];ruleMap={};
+  Object.keys(ready).forEach(k=>ready[k]=false);picked=false;render();
+  const base="budgets/"+bid+"/";const clean=d=>JSON.parse(JSON.stringify(d));
+  const col=(c,fn,k)=>unsubs.push(FB.onSnapshot(FB.collection(FB.db,base+c),s=>fn(s.docs.map(d=>({...d.data(),id:d.id}))),e=>{console.error(c,e);ready[k]=true;render()}));
+  store={setMonth:(k,d)=>FB.setDoc(FB.doc(FB.db,base+"months/"+k),clean(d)),setTx:r=>FB.setDoc(FB.doc(FB.db,base+"tx/"+r.id),clean(r)),delTx:id=>FB.deleteDoc(FB.doc(FB.db,base+"tx/"+id)),
+    set:(c,r)=>FB.setDoc(FB.doc(FB.db,base+c+"/"+r.id),clean(r)),del:(c,id)=>FB.deleteDoc(FB.doc(FB.db,base+c+"/"+id)),
+    setBudget:f=>FB.updateDoc(FB.doc(FB.db,"budgets/"+bid),clean(f))};
+  unsubs.push(FB.onSnapshot(FB.doc(FB.db,"budgets/"+bid),s=>{if(!s.exists()||!(s.data().members||[]).includes(user.uid)){afterLogin(FB,user);return}
+    budgetDoc=s.data();setCats(budgetDoc.cats);ready.b=true;render()},e=>{console.error(e);afterLogin(FB,user)}));
+  col("accounts",a=>{accounts=a;ready.a=true;render()},"a");
+  col("receipts",a=>{receipts=a.map(r=>({...r,items:Array.isArray(r.items)?r.items:[]}));ready.p=true;render()},"p");
+  col("subs",a=>{subs=a;ready.s=true;render()},"s");
+  col("transfers",a=>{transfers=a;ready.r=true;render()},"r");
+  col("months",a=>{const o={};a.forEach(d=>{const{id,...rest}=d;o[id]=rest});months=o;ready.m=true;pickStart();render()},"m");
+  col("tx",a=>{txs=a;ready.t=true;render()},"t");
+  col("catrules",a=>{const o={};a.forEach(x=>{if(x.k&&x.sub)o[x.k]=x.sub});ruleMap=o},"c");
+  unsubs.push(FB.onSnapshot(FB.query(FB.collection(FB.db,"budgets"),FB.where("members","array-contains",user.uid)),s=>{myBudgets=s.docs.map(d=>({id:d.id,name:d.data().name||"Budžet",owner:d.data().owner}));if(tab==="plan")render()},()=>{}));
+  unsubs.push(FB.onSnapshot(FB.query(FB.collection(FB.db,"invites"),FB.where("createdBy","==",user.uid)),s=>{myInvites=s.docs.map(d=>({...d.data(),id:d.id}));if(tab==="plan")render()},()=>{}));
 }
 function start(){
   render();
   const cfg=CONFIG.firebase||{};
-  if(!cfg.apiKey||!cfg.projectId){showSetup();return}
-  const go=()=>{const FB=window.__fb;if(!FB){showLogin("Firebase se nije učitao. Proveri internet vezu.");return}
-    FB.onAuth(u=>{if(u)startData(FB,u);else{unsubs.forEach(x=>{try{x()}catch(e){}});unsubs=[];showLogin()}})};
-  if(window.__fb)go();else{window.addEventListener("fb-ready",go,{once:true});setTimeout(()=>{if(!window.__fb)showLogin("Firebase se nije učitao. Proveri internet vezu.")},15000)}
+  if(!cfg.apiKey||!cfg.projectId){screen("Podešavanje",`<section class="card"><h2 class="sec-title">Aplikacija još nije povezana</h2><p>Upiši Firebase podatke u CONFIG na vrhu fajla index.html.</p></section>`);return}
+  const go=()=>{const FB=window.__fb;if(!FB){screen("Greška",'<div class="loading">Firebase se nije učitao. Proveri internet vezu.</div>');return}
+    FB.onAuth(u=>{if(u)afterLogin(FB,u);else{stopSubs();fbUser=null;BID=null;showLogin()}})};
+  if(window.__fb)go();else{window.addEventListener("fb-ready",go,{once:true});setTimeout(()=>{if(!window.__fb)screen("Greška",'<div class="loading">Firebase se nije učitao. Proveri internet vezu.</div>')},15000)}
 }
-/* ---------- settings: backup ---------- */
-function settingsCard(){return `<section class="card"><h2 class="sec-title">Podešavanja</h2>
-  <div class="kv"><span>Prijavljen kao</span><b>${esc(fbUser&&fbUser.email||"")}</b></div>
-  <div class="row2" style="margin-top:10px"><button class="btn ghost" type="button" id="bkExport">Izvezi kopiju</button><button class="btn ghost" type="button" id="bkImport">Uvezi kopiju</button></div>
-  <div class="err" id="bkErr"></div>
-  <button class="btn ghost" type="button" id="logout" style="margin-top:4px">Odjavi se</button></section>`}
+/* ---------- settings ---------- */
+function settingsCard(){
+  const me=fbUser&&fbUser.uid,isOwner=budgetDoc.owner===me,emails=budgetDoc.memberEmails||{},mem=budgetDoc.members||[];
+  const open=myInvites.filter(i=>!i.usedBy).sort((a,b)=>(b.created||0)-(a.created||0));
+  let h=`<section class="card"><h2 class="sec-title">Budžet i članovi</h2>
+   <div class="inrow"><label class="lbl" for="bd_name">Naziv budžeta</label><input id="bd_name" maxlength="40" value="${esc(budgetDoc.name||"")}"></div>
+   <div class="lbl" style="margin:4px 0">Članovi (${mem.length})</div>
+   ${mem.map(uid=>`<div class="kv"><span>${esc(emails[uid]||"član")}${uid===budgetDoc.owner?' <span class="muted">vlasnik</span>':""}${uid===me?' <span class="muted">(ti)</span>':""}</span>${isOwner&&uid!==me?`<button type="button" class="linkbtn danger-link" data-rmem="${esc(uid)}">Ukloni</button>`:""}</div>`).join("")}
+   <div class="actions" style="margin-top:10px"><button class="btn primary" type="button" id="invJoin">Pozovi osobu u ovaj budžet</button>
+   ${isAdminEmail(fbUser&&fbUser.email)?`<button class="btn ghost" type="button" id="invNew">Pozovi novog korisnika sa svojim budžetom</button>`:""}</div>
+   <div id="invShow">${lastShownInvite?inviteBox(lastShownInvite):""}</div>`;
+  if(open.length)h+=`<div class="lbl" style="margin:12px 0 4px">Aktivni pozivi</div>${open.map(i=>`<div class="kv"><span class="num">${fmtCode(i.id)} <span class="muted">${i.type==="new"?"svoj budžet":"ovaj budžet"}</span></span><span><button type="button" class="linkbtn" data-ishow="${esc(i.id)}">Prikaži</button> · <button type="button" class="linkbtn danger-link" data-idel="${esc(i.id)}">Poništi</button></span></div>`).join("")}`;
+  if(!isOwner)h+=`<button class="btn ghost" type="button" id="bdLeave" style="margin-top:10px">Napusti ovaj budžet</button>`;
+  if(myBudgets.length>1)h+=`<div class="inrow" style="margin-top:12px"><label class="lbl" for="bd_switch">Moji budžeti</label><select id="bd_switch">${myBudgets.map(b=>`<option value="${esc(b.id)}"${b.id===BID?" selected":""}>${esc(b.name)}</option>`).join("")}</select></div>`;
+  h+=`<div class="inrow" style="margin-top:12px"><label class="lbl" for="bd_code">Imaš kod za drugi budžet?</label><div class="row2"><input id="bd_code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX"><button class="btn ghost" type="button" id="bd_join">Pridruži se</button></div></div>
+   <div class="err" id="bdErr"></div></section>
+   <section class="card"><h2 class="sec-title">Nalog i podaci</h2>
+   <div class="kv"><span>Prijavljen kao</span><b>${esc(fbUser&&fbUser.email||"")}</b></div>
+   <div class="row2" style="margin-top:10px"><button class="btn ghost" type="button" id="bkExport">Izvezi kopiju</button><button class="btn ghost" type="button" id="bkImport">Uvezi kopiju</button></div>
+   <div class="err" id="bkErr"></div><button class="btn ghost" type="button" id="logout" style="margin-top:4px">Odjavi se</button></section>`;
+  return h}
+function inviteLink(code){return location.origin+location.pathname+"?kod="+fmtCode(code)}
+function inviteBox(code){const inv=myInvites.find(i=>i.id===code);return `<div class="invbox"><div class="lbl">${inv&&inv.type==="new"?"Poziv za novog korisnika (dobija svoj budžet)":"Poziv u ovaj budžet"}</div>
+  <div class="invcode num">${fmtCode(code)}</div><div class="note" style="margin:4px 0 8px;overflow-wrap:anywhere">${esc(inviteLink(code))}</div>
+  <button class="btn ghost" type="button" data-icopy="${esc(code)}">Kopiraj poruku sa linkom</button><p class="note">Kod važi za jednu osobu. Ona otvori link, izabere Registracija i napravi nalog.</p></div>`}
 function bindSettings(){
-  const ex=$("#bkExport");if(!ex)return;
-  ex.onclick=()=>{const data={months:Object.entries(months).map(([id,v])=>({...v,id})),tx:txs,accounts,transfers,subs,receipts};
-    const blob=new Blob([JSON.stringify({app:"budzetiranje",version:1,exported:todayISO(),data},null,1)],{type:"application/json"});
+  const FB=window.__fb,me=fbUser&&fbUser.uid;if(!$("#bkExport"))return;
+  const nm=$("#bd_name");nm.onchange=async()=>{const v=nm.value.trim().slice(0,40);if(!v||v===budgetDoc.name)return;try{await store.setBudget({name:v});toast("Naziv sačuvan")}catch(e){$("#bdErr").textContent=errMsg(e)}};
+  const mk=async type=>{const code=genCode();try{await FB.setDoc(FB.doc(FB.db,"invites/"+code),{type,budgetId:type==="join"?BID:"",createdBy:me,createdByEmail:fbUser.email||"",created:Date.now()});
+    lastShownInvite=code;render()}catch(e){$("#bdErr").textContent=type==="new"?"Samo administrator može da poziva nove korisnike sa svojim budžetom.":errMsg(e)}};
+  $("#invJoin").onclick=()=>mk("join");if($("#invNew"))$("#invNew").onclick=()=>mk("new");
+  document.querySelectorAll("[data-ishow]").forEach(b=>b.onclick=()=>{lastShownInvite=b.dataset.ishow;render()});
+  document.querySelectorAll("[data-idel]").forEach(b=>b.onclick=async()=>{try{await FB.deleteDoc(FB.doc(FB.db,"invites/"+b.dataset.idel));if(lastShownInvite===b.dataset.idel)lastShownInvite=null;toast("Poziv poništen")}catch(e){$("#bdErr").textContent=errMsg(e)}});
+  document.querySelectorAll("[data-icopy]").forEach(b=>b.onclick=()=>{const code=b.dataset.icopy;const txt="Pozivam te u aplikaciju Budžetiranje. Otvori link, izaberi Registracija i napravi nalog:\n"+inviteLink(code)+"\nKod: "+fmtCode(code);
+    try{navigator.clipboard.writeText(txt).then(()=>toast("Poruka kopirana"),()=>toast("Kopiraj kod ručno"))}catch(e){toast("Kopiraj kod ručno")}});
+  document.querySelectorAll("[data-rmem]").forEach(b=>{let armed=false;b.onclick=async()=>{if(!armed){armed=true;b.textContent="Potvrdi uklanjanje";return}
+    const uid=b.dataset.rmem;try{await FB.updateDoc(FB.doc(FB.db,"budgets/"+BID),{members:FB.arrayRemove(uid),["memberEmails."+uid]:FB.deleteField()});toast("Član uklonjen")}catch(e){$("#bdErr").textContent=errMsg(e)}}});
+  if($("#bdLeave")){let armed=false;$("#bdLeave").onclick=async()=>{if(!armed){armed=true;$("#bdLeave").textContent="Dodirni ponovo: napuštaš budžet";return}
+    try{await FB.updateDoc(FB.doc(FB.db,"budgets/"+BID),{members:FB.arrayRemove(me),["memberEmails."+me]:FB.deleteField()});await FB.setDoc(FB.doc(FB.db,"users/"+me),{budgetId:""},{merge:true});afterLogin(FB,fbUser)}catch(e){$("#bdErr").textContent=errMsg(e)}}}
+  if($("#bd_switch"))$("#bd_switch").onchange=e=>{const v=e.target.value;if(v!==BID)openBudget(FB,v)};
+  $("#bd_join").onclick=async()=>{const code=cleanCode($("#bd_code").value);if(!code)return;try{const bid=await redeem(FB,fbUser,code);toast("Pridružio si se budžetu");await openBudget(FB,bid)}catch(e){$("#bdErr").textContent=inviteErr(e)}};
+  $("#bkExport").onclick=()=>{const data={months:Object.entries(months).map(([id,v])=>({...v,id})),tx:txs,accounts,transfers,subs,receipts,cats:CATDEF};
+    const blob=new Blob([JSON.stringify({app:"budzetiranje",version:2,exported:todayISO(),data},null,1)],{type:"application/json"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="budzet-kopija-"+todayISO()+".json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)};
   $("#bkImport").onclick=()=>{const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
     try{const j=JSON.parse(await f.text());const d=j.data||j;let n=0;
-      const cols=["months","tx","accounts","transfers","subs","receipts"];
-      for(const c of cols)for(const r of (d[c]||[])){if(!r||!r.id)continue;const {id,...rest}=r;
+      if(Array.isArray(d.cats)&&d.cats.length)await store.setBudget({cats:d.cats});
+      for(const c of ["months","tx","accounts","transfers","subs","receipts"])for(const r of (d[c]||[])){if(!r||!r.id)continue;const {id,...rest}=r;
         if(c==="months")await store.setMonth(id,rest);else await store.set(c,{...rest,id});n++}
       toast(n+" zapisa uvezeno")}catch(e){$("#bkErr").textContent="Fajl nije ispravna rezervna kopija."}};inp.click()};
-  $("#logout").onclick=()=>window.__fb.signOut();
+  $("#logout").onclick=()=>FB.signOut();
 }
 start();
 
