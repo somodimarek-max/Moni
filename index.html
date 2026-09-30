@@ -15,7 +15,7 @@
 /* ======================================================================
    PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
    ====================================================================== */
-const APP_VERSION="2.2.0";
+const APP_VERSION="2.2.1";
 const CONFIG={
   firebase:{
     apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
@@ -315,6 +315,7 @@ img{max-width:100%}[hidden]{display:none!important}
 .invbox{margin-top:10px;background:var(--surface2);border:1px dashed var(--g1);border-radius:14px;padding:12px}
 .invcode{font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:.06em;margin-top:2px}
 .danger-link{color:var(--bad)}
+.invbox.used{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
 .ce-inc{flex-direction:row;align-items:center}
 .rv-x:disabled{opacity:.3}
 .welcome{border-color:var(--g1);background:var(--info-bg)}
@@ -1223,7 +1224,10 @@ function settingsCard(){
    <div class="err" id="bkErr"></div><button class="btn ghost" type="button" id="logout" style="margin-top:4px">Odjavi se</button></section>`;
   return h}
 function inviteLink(code){return location.origin+location.pathname+"?kod="+fmtCode(code)}
-function inviteBox(code){const inv=myInvites.find(i=>i.id===code);return `<div class="invbox"><div class="lbl">${inv&&inv.type==="new"?"Poziv za novog korisnika (dobija svoj budžet)":"Poziv u ovaj budžet"}</div>
+function inviteBox(code){const inv=myInvites.find(i=>i.id===code);
+  if(!inv)return "";
+  if(inv.usedBy){const who=(budgetDoc.memberEmails||{})[inv.usedBy];return `<div class="invbox used"><b>✓ Kod ${fmtCode(code)} je iskorišćen</b><div class="note" style="margin-top:4px">${who?esc(who)+" se pridružio/la budžetu.":"Nova osoba je napravila nalog."}</div></div>`}
+  return `<div class="invbox"><div class="lbl">${inv&&inv.type==="new"?"Poziv za novog korisnika (dobija svoj budžet)":"Poziv u ovaj budžet"}</div>
   <div class="invcode num">${fmtCode(code)}</div><div class="note" style="margin:4px 0 8px;overflow-wrap:anywhere">${esc(inviteLink(code))}</div>
   <button class="btn ghost" type="button" data-icopy="${esc(code)}">Kopiraj poruku sa linkom</button><p class="note">Kod važi za jednu osobu. Ona otvori link, izabere Registracija i napravi nalog.</p></div>`}
 function bindSettings(){
