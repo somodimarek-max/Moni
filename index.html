@@ -15,7 +15,7 @@
 /* ======================================================================
    PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
    ====================================================================== */
-const APP_VERSION="2.2.1";
+const APP_VERSION="2.3.0";
 const CONFIG={
   firebase:{
     apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
@@ -330,6 +330,19 @@ html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:10
 #gsearch,#bd_name,#bd_code,#nb_code{font-size:16px}
 body{overscroll-behavior-y:none}
 .upd{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top,0px));z-index:30;background:var(--g1);color:#fff;border:0;border-radius:999px;padding:10px 16px;font-weight:700;box-shadow:0 6px 18px rgba(20,40,90,.3)}
+.srow{padding:0;gap:0;align-items:stretch;overflow:hidden}
+.srow-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:9px 12px;background:none;border:0;text-align:left;color:inherit;font:inherit}
+.srow-pay{flex:none;min-width:64px;border:0;border-left:1px solid var(--line);background:var(--surface);color:var(--g1);font-weight:800;font-size:14px;padding:0 12px}
+.srow-pay:disabled{opacity:.5}
+.srow-pay.done{color:var(--ok);font-size:20px}
+.srow-pay.armed{color:var(--bad);font-size:13px}
+.srow.s-paid{--sc:var(--ok)}
+.srow.s-paid .mid b{color:var(--muted)}
+.srow.s-late{--sc:var(--bad);--sb:var(--bad-bg)}
+.subs-tg.s-paid{--sc:var(--ok)}.subs-tg.s-late{--sc:var(--bad)}
+.inc-txt{color:var(--ok)}
+.inc-amt span:first-child{color:var(--ok)}
+.btn.inc-btn{background:var(--ok)}
 </style>
 
 </head>
@@ -462,7 +475,7 @@ const mkey=d=>d.slice(0,7);
 const shift=(k,n)=>{let[y,m]=k.split("-").map(Number);m+=n;while(m>12){m-=12;y++}while(m<1){m+=12;y--}return y+"-"+String(m).padStart(2,"0")};
 const mTitle=k=>{const[y,m]=k.split("-");return MONTHS[m-1].toUpperCase()+" "+y};
 
-let months={},txs=[],accounts=[],transfers=[],subs=[],cur=mkey(todayISO()),tab="pregled",ready={m:false,t:false,a:false,r:false,s:false,p:false,b:false},store=null,localMode=false,readOnly=false,picked=false;
+let months={},txs=[],uplate=[],accounts=[],transfers=[],subs=[],cur=mkey(todayISO()),tab="pregled",ready={m:false,t:false,a:false,r:false,s:false,p:false,b:false,u:false},store=null,localMode=false,readOnly=false,picked=false;
 const ATYPES={
   kartica:{name:"Kartica",ic:"KA",inc:true,color:"--g1"},
   tekuci:{name:"Tekući račun",ic:"TR",inc:true,color:"--g1"},
@@ -474,6 +487,7 @@ const CAM='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="c
 const newId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function accBal(a){const since=a.setAt||0;let b=+a.opening||0;
   txs.forEach(t=>{if(t.account===a.id&&(t.created||0)>since)b-=+t.amount||0});
+  uplate.forEach(u=>{if(u.account===a.id&&(u.created||0)>since)b+=+u.amount||0});
   transfers.forEach(r=>{if((r.created||0)<=since)return;if(r.from===a.id)b-=+r.amount||0;if(r.to===a.id)b+=+r.amount||0});
   return Math.round(b*100)/100}
 function accSorted(){return accounts.slice().sort((a,b)=>(a.order||0)-(b.order||0)||(a.created||0)-(b.created||0))}
@@ -491,7 +505,8 @@ function monthData(k){
   return {incomes:incOf(base),budgets:{...(base.budgets||{})},carry:null,_exists:false};
 }
 function calc(k,depth=0){
-  const m=monthData(k),inc=Math.round(incSum(m.incomes)*100)/100;
+  const m=monthData(k),incBy={};let inc=0;
+  uplate.forEach(u=>{if(u.month===k){incBy[u.src]=(incBy[u.src]||0)+(+u.amount||0);inc+=+u.amount||0}});inc=Math.round(inc*100)/100;
   const spent={};txs.forEach(t=>{if(t.month===k)spent[t.cat]=(spent[t.cat]||0)+(+t.amount||0)});
   const cats={};let plan=0,spentAll=0;
   Object.values(CATS).forEach(c=>{const b=+(m.budgets||{})[c.id]||0,s=spent[c.id]||0;cats[c.id]={b,s};plan+=b;spentAll+=s});
@@ -501,7 +516,7 @@ function calc(k,depth=0){
   let carry=m.carry;
   if(typeof carry!=="number"){const pk=shift(k,-1);carry=(months[pk]&&depth<24)?calc(pk,depth+1).ukupnoKes:0}
   const ukupnoKes=kes+carry;
-  return {m,inc,cats,g,plan,spent:spentAll,kes,carry,autoCarry:typeof m.carry!=="number",ukupnoKes,
+  return {m,inc,incBy,cats,g,plan,spent:spentAll,kes,carry,autoCarry:typeof m.carry!=="number",ukupnoKes,
     ostaje:inc-spentAll,invRate:inc?g.invest.b/inc:0,pokriva:g.osnovni.b?ukupnoKes/g.osnovni.b:0,
     stednja:inc?(g.invest.b+kes)/inc:0};
 }
@@ -515,7 +530,7 @@ function render(){
   $("#viewName").textContent={pregled:"Pregled",transakcije:"Transakcije",plan:"Plan budžeta",racuni:"Moji računi"}[tab];
   $("#prevM").classList.toggle("off",accTab);$("#nextM").classList.toggle("off",accTab);
   document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
-  if(!(ready.m&&ready.t&&ready.a&&ready.r&&ready.s&&ready.p&&ready.b)){$("#main").innerHTML='<div class="loading">Učitavam budžet…</div>';return}
+  if(!(ready.m&&ready.t&&ready.a&&ready.r&&ready.s&&ready.p&&ready.b&&ready.u)){$("#main").innerHTML='<div class="loading">Učitavam budžet…</div>';return}
   const c=calc(cur);let h="";
   if(localMode)h+='<div class="banner">Podaci se sada čuvaju samo u ovom pregledaču. Otvori aplikaciju prijavljen na claude.ai da bi se čuvali trajno i na svim uređajima.</div>';
   if(readOnly)h+='<div class="banner">Imaš pristup samo za čitanje, pa izmene neće biti sačuvane.</div>';
@@ -534,23 +549,23 @@ function copyForSheet(){
   try{navigator.clipboard.writeText(tsv).then(()=>toast(list.length+" troškova kopirano"),fallback)}catch(e){fallback()}
 }
 function viewOverview(c){
-  let welcome="";if(!Object.keys(months).length)welcome=`<section class="card welcome"><h2 class="sec-title">Dobrodošao u Budžetiranje</h2><p>Počni u <b>Planu</b>: upiši prihode i koliko planiraš da trošiš po kategorijama. Izvore prihoda i kategorije menjaš dugmetom <b>Uredi kategorije i prihode</b>.</p><button class="btn primary" type="button" data-goto="plan">Otvori Plan</button></section>`;
+  let welcome="";if(!Object.keys(months).length)welcome=`<section class="card welcome"><h2 class="sec-title">Dobrodošao u Budžetiranje</h2><p>Kad ti stigne uplata, dodaj je dugmetom <b>+</b> dole (izaberi „Uplata“). U <b>Planu</b> upiši koliko planiraš da trošiš po kategorijama. Izvore prihoda i kategorije menjaš dugmetom <b>Uredi kategorije i prihode</b>.</p><button class="btn primary" type="button" data-goto="plan">Otvori Plan</button></section>`;
   const over=c.spent>c.plan&&c.plan>0;
   const spentW=c.inc?Math.min(c.spent/c.inc,1)*100:0, planW=c.inc?Math.max(Math.min(c.plan/c.inc,1)*100-spentW,0):0;
   let h=welcome+`<section class="hero"><div class="lbl">Ostaje ovog meseca</div>
   <div class="big num" style="color:${c.ostaje<0?"var(--bad)":"var(--ink)"}">${eur(c.ostaje)}</div>
-  <div class="sub num">Prihod ${eur(c.inc)} · potrošeno ${eur(c.spent)}</div>
-  ${INC.length>1?`<div class="sub num" style="margin-top:2px">${INC.map(x=>esc(x.name)+" "+eur(c.m.incomes[x.id]||0)).join(" · ")}</div>`:""}
+  <div class="sub num">Uplaćeno ${eur(c.inc)} · potrošeno ${eur(c.spent)}</div>
+  ${INC.length>1&&c.inc?`<div class="sub num" style="margin-top:2px">${INC.map(x=>esc(x.name)+" "+eur(c.incBy[x.id]||0)).join(" · ")}</div>`:""}
   <div class="meter" aria-hidden="true"><i style="width:${spentW}%;background:${over?"var(--bad)":"var(--g1)"}"></i><i style="width:${planW}%;background:var(--line)"></i></div>
   <div class="meter-legend num"><span>Potrošeno ${pct(c.plan?c.spent/c.plan:0)} plana</span><span>Plan ${eur(c.plan)}</span></div></section>`;
   if(accounts.length){const T=accTotals();
     h+=`<section class="card"><div class="sub-h" style="margin:0 0 4px"><div class="lbl">Novac na računima u budžetu</div><button class="linkbtn" data-goto="racuni" type="button">Računi ›</button></div>
     <div class="num" style="font-family:var(--display);font-weight:800;font-size:28px;color:${T.inB<0?"var(--bad)":"var(--ink)"}">${eur(T.inB)}</div>
     <div class="acc-sum num"><span>Van budžeta <b>${eur(T.outB)}</b></span><span>Ukupno <b>${eur(T.all)}</b></span></div></section>`}
-  const soon=subs.map(x=>({x,u:subDue(x.day)})).filter(o=>o.u.days<=7).sort((a,b)=>a.u.days-b.u.days);
-  if(soon.length){h+=`<section class="card"><div class="sub-h" style="margin:0 0 8px"><div class="lbl">Naplata u narednih 7 dana</div><button class="linkbtn" data-goto="plan" type="button">Sve ›</button></div><div class="sublist">`;
-    soon.forEach(({x})=>{const st=subState(x);h+=`<button type="button" class="srow ${st.cls}" data-sub="${esc(x.id)}"><span class="sday num">${x.day}.</span><span class="mid"><b>${esc(x.name)}</b><span>${st.txt}</span></span><span class="amt num">${eur(x.amount)}</span></button>`});
-    h+=`</div></section>`}
+  const CM=mkey(todayISO()),soon=subs.map(x=>({x,st:subState(x,CM)})).filter(o=>["s-late","s-now","s-3","s-7"].includes(o.st.cls)).sort((a,b)=>a.x.day-b.x.day);
+  if(soon.length){h+=`<section class="card"><div class="sub-h" style="margin:0 0 8px"><div class="lbl">Za plaćanje</div><button class="linkbtn" data-goto="plan" type="button">Sve ›</button></div><div class="sublist">`;
+    soon.forEach(({x})=>{h+=srowHTML(x,CM)});
+    h+=`</div><p class="note" style="margin:8px 2px 0">Dodirni „Plati“ i trošak se upiše u svoju kategoriju.</p></section>`}
   h+=`<div class="kpis">
    <div class="kpi"><div class="lbl">Planirani rashodi</div><b class="num">${eur(c.plan)}</b><small class="num">višak po planu: ${eur(c.inc-c.plan)}</small></div>
    <div class="kpi"><div class="lbl">Stopa investiranja</div><b class="num">${pct(c.invRate)}</b><small>grupa Štednja / prihodi</small></div></div>`;
@@ -593,14 +608,18 @@ function txSeg(){return `<div class="seg" role="tablist"><button type="button" r
 function viewTx(c){
   if(txView==="namirnice")return txSeg()+viewGroceries();
   const list=txs.filter(t=>t.month===cur).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
-  let h=txSeg()+`<div class="tx-head"><h2 class="sec-title" style="margin:0">Troškovi</h2><b class="num">${eur(c.spent)}</b></div>`;
+  const ul=uplate.filter(u=>u.month===cur);
+  let h=txSeg()+`<div class="tx-head"><h2 class="sec-title" style="margin:0">Troškovi</h2><b class="num">${eur(c.spent)}</b></div>${ul.length?`<div class="tx-head" style="margin-top:-8px"><span class="muted">Uplate</span><b class="num inc-txt">+${eur(c.inc)}</b></div>`:""}`;
   if(scanReady())h+=`<button class="btn scan" type="button" data-scan="1">${CAM}Skeniraj QR kod računa</button>`;
-  if(!list.length)return h+`<div class="txlist"><div class="empty"><b>Još nema troškova za ${MONTHS[+cur.slice(5)-1]}</b>Dodaj prvi dugmetom + dole.</div></div>`;
-  h+=`<div class="copybox"><button class="btn ghost" id="copyTx" type="button">Kopiraj za Google tabelu (${list.length})</button>
+  if(!list.length&&!ul.length)return h+`<div class="txlist"><div class="empty"><b>Još nema troškova ni uplata za ${MONTHS[+cur.slice(5)-1]}</b>Dodaj ih dugmetom + dole.</div></div>`;
+  if(list.length)h+=`<div class="copybox"><button class="btn ghost" id="copyTx" type="button">Kopiraj za Google tabelu (${list.length})</button>
    <p class="note" style="margin:6px 2px 0">U listu TRANSAKCIJE ${MONTHS[+cur.slice(5)-1].toUpperCase()} klikni prvu praznu ćeliju ispod DATUM i nalepi (Ctrl+V).</p>
    <textarea id="copyArea" class="copyarea" readonly hidden aria-label="Troškovi za kopiranje"></textarea></div>`;
   let day="";h+="<div>";
-  list.forEach(t=>{if(t.date!==day){if(day)h+="</div>";day=t.date;const d=new Date(t.date+"T12:00");h+=`<div class="day">${DAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}</div><div class="txlist">`}
+  const rows=list.map(t=>({...t,_k:"t"})).concat(ul.map(u=>({...u,_k:"u"}))).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  rows.forEach(t=>{if(t.date!==day){if(day)h+="</div>";day=t.date;const d=new Date(t.date+"T12:00");h+=`<div class="day">${DAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}</div><div class="txlist">`}
+    if(t._k==="u"){const sx=INC.find(x=>x.id===t.src),ac=accounts.find(a=>a.id===t.account);const subl=[t.desc||"Uplata",ac?ac.name:""].filter(Boolean).join(" · ");
+      h+=`<button class="tx" data-upl="${esc(t.id)}" style="--gc:var(--ok)"><span class="ic">+</span><span class="mid"><b>${esc(sx?sx.name:"Uplata")}</b><span>${esc(subl)}</span></span><span class="amt num inc-txt">+${eur(t.amount)}</span></button>`;return}
     const cat=CATS[t.cat];const G=cat?cat.group:{color:"--muted"};const ac=accounts.find(a=>a.id===t.account);
     const subl=[t.desc||"Bez opisa",ac?ac.name:""].filter(Boolean).join(" · ");
     h+=`<button class="tx" data-tx="${esc(t.id)}" style="--gc:var(${G.color})"><span class="ic">${esc((cat?cat.name:"?").slice(0,2).toUpperCase())}</span><span class="mid"><b>${esc(cat?cat.name:t.cat)}</b><span>${esc(subl)}</span></span><span class="amt num">−${eur(t.amount)}</span></button>`});
@@ -609,8 +628,10 @@ function viewTx(c){
 function viewPlan(c){
   const m=c.m;
   let h=`<div class="plan-top"><span class="lbl">${esc(budgetDoc.name||"Budžet")}${(budgetDoc.members||[]).length>1?" · "+(budgetDoc.members||[]).length+" člana":""}</span><button type="button" class="linkbtn" id="catEdit">Uredi kategorije i prihode</button></div>`+`<section class="card"><h2 class="sec-title">Prihodi i prenos</h2>
-${INC.map(x=>`<div class="field"><label for="i_${x.id}">${esc(x.name)}</label><span class="money"><input id="i_${x.id}" data-inc="${x.id}" inputmode="decimal" value="${nf.format(m.incomes[x.id]||0)}"><span>€</span></span></div>`).join("")}
-   ${INC.length>1?`<div class="kv total num"><span>Ukupno prihodi</span><b>${eur(c.inc)}</b></div>`:""}
+${INC.map(x=>`<div class="kv"><span>${esc(x.name)}</span><b class="num">${eur(c.incBy[x.id]||0)}</b></div>`).join("")}
+   ${Object.keys(c.incBy).filter(k=>!INC.some(x=>x.id===k)).length?`<div class="kv"><span>Ostalo</span><b class="num">${eur(Object.entries(c.incBy).filter(([k])=>!INC.some(x=>x.id===k)).reduce((a,[,v])=>a+v,0))}</b></div>`:""}
+   <div class="kv total num"><span>Uplaćeno u ${MONTHS[+cur.slice(5)-1]}u</span><b>${eur(c.inc)}</b></div>
+   <button type="button" class="btn ghost" data-addinc="1" style="margin:8px 0 6px">+ Dodaj uplatu</button>
    <div class="field"><label for="p_carry">Preneto iz prethodnog meseca<small>Prazno = automatski (${eur(c.autoCarry?c.carry:0)})</small></label><span class="money"><input id="p_carry" inputmode="decimal" placeholder="auto" value="${typeof m.carry==="number"?nf.format(m.carry):""}"><span>€</span></span></div></section>`;
   GROUPS.forEach(G=>{h+=`<section class="card" style="border-left:5px solid var(${G.color})"><h2 class="sec-title" style="color:var(${G.color})">${G.name}</h2>`;
     G.cats.forEach(([id,name])=>{
@@ -631,14 +652,33 @@ function subDue(day){
   const ny=m===11?y+1:y,nm=(m+1)%12,nextC=Math.min(day,dim(ny,nm));
   return{days:dim(y,m)-d+nextC,charged:true,chargedDay:thisC,date:new Date(ny,nm,nextC)};
 }
-function subState(s){const u=subDue(s.day),bill=(s.cat||"pretplate")==="racuni";
-  if(u.days===0)return{cls:"s-now",txt:bill?"Dospeva danas":"Naplaćuje se danas"};
-  if(u.days<=3)return{cls:"s-3",txt:u.days===1?"Sutra":"Za "+u.days+" dana"};
-  if(u.days<=7)return{cls:"s-7",txt:"Za "+u.days+" dana"};
-  if(u.charged)return{cls:"s-done",txt:(bill?"Dospelo ":"Naplaćeno ")+u.chargedDay+". · sledeći put za "+u.days+" dana"};
-  if(u.days<=14)return{cls:"s-14",txt:"Za "+u.days+" dana"};
-  return{cls:"s-far",txt:"Za "+u.days+" dana"};
+const subPaidTx=(s,mk)=>txs.find(t=>t.sub===s.id&&t.month===mk);
+function subState(s,mk){const CM=mkey(todayISO());mk=mk||CM;const bill=(s.cat||"pretplate")==="racuni";
+  const paid=subPaidTx(s,mk);
+  if(paid){const d=new Date(paid.date+"T12:00");return{cls:"s-paid",txt:"✓ Plaćeno "+d.getDate()+". "+MONTHS[d.getMonth()],paid}}
+  if(mk<CM)return{cls:"s-late",txt:"Nije upisano"};
+  if(mk>CM)return{cls:"s-far",txt:(bill?"Dospeva ":"Naplata ")+s.day+"."};
+  const now=new Date(),d=now.getDate(),due=Math.min(s.day,dim(now.getFullYear(),now.getMonth())),days=due-d;
+  if(days<0)return{cls:"s-late",txt:(bill?"Dospelo ":"Naplata bila ")+due+". · nije upisano"};
+  if(days===0)return{cls:"s-now",txt:bill?"Dospeva danas":"Naplaćuje se danas"};
+  if(days<=3)return{cls:"s-3",txt:days===1?"Sutra":"Za "+days+" dana"};
+  if(days<=7)return{cls:"s-7",txt:"Za "+days+" dana"};
+  if(days<=14)return{cls:"s-14",txt:"Za "+days+" dana"};
+  return{cls:"s-far",txt:"Za "+days+" dana"};
 }
+function srowHTML(s,mk){const st=subState(s,mk);
+  return `<div class="srow ${st.cls}"><button type="button" class="srow-main" data-sub="${esc(s.id)}"><span class="sday num">${s.day}.</span><span class="mid"><b>${esc(s.name)}</b><span>${st.txt}</span></span><span class="amt num">${eur(s.amount)}</span></button>${st.paid?`<button type="button" class="srow-pay done" data-unpay="${esc(s.id)}" data-mk="${mk}" aria-label="Poništi plaćanje ${esc(s.name)}">✓</button>`:`<button type="button" class="srow-pay" data-pay="${esc(s.id)}" data-mk="${mk}">Plati</button>`}</div>`}
+async function paySub(id,mk){const s=subs.find(x=>x.id===id);if(!s)return;const cat=subCat(s);
+  if(!CATS[cat]){toast("Kategorija ove stavke više ne postoji");return}
+  if(subPaidTx(s,mk)){toast("Već je upisano");return}
+  const [y,m]=mk.split("-").map(Number);const date=mk===mkey(todayISO())?todayISO():mk+"-"+String(Math.min(s.day,dim(y,m-1))).padStart(2,"0");
+  const acc=s.account&&accounts.some(a=>a.id===s.account)?s.account:(accounts.some(a=>a.id===lastAcc)?lastAcc:"");
+  try{await store.setTx({id:newId("t"),date,month:mk,cat,desc:s.name,amount:+s.amount||0,created:Date.now(),account:acc,sub:s.id});toast(s.name+" "+eur(s.amount)+" → "+CATS[cat].name)}
+  catch(e){toast(errMsg(e))}}
+let unpayArmed=null;
+async function unpaySub(btn){const id=btn.dataset.unpay,mk=btn.dataset.mk;const s=subs.find(x=>x.id===id);if(!s)return;
+  if(!unpayArmed||unpayArmed.id!==id||Date.now()-unpayArmed.t>4000){unpayArmed={id,t:Date.now()};btn.textContent="Poništi?";btn.classList.add("armed");return}
+  unpayArmed=null;const t=subPaidTx(s,mk);if(!t)return;try{await store.delTx(t.id);toast("Plaćanje poništeno")}catch(e){toast(errMsg(e))}}
 const LISTS={
   pretplate:{title:"Pojedinačne pretplate",one:"pretplata",few:"pretplate",many:"pretplata",add:"+ Dodaj pretplatu",empty:"Dodaj pretplate (Netflix, Spotify, iCloud…) sa danom naplate da vidiš šta se uskoro naplaćuje.",
     newT:"Nova pretplata",editT:"Izmeni pretplatu",ph:"npr. Netflix",saveNew:"Dodaj pretplatu",del:"Obriši pretplatu",tDel:"Pretplata obrisana",tSave:"Pretplata sačuvana",tAdd:"Pretplata dodata",dayL:"Dan naplate u mesecu (1–31)",nameErr:"Upiši naziv pretplate."},
@@ -655,8 +695,10 @@ function subsToggle(cat,name){
   const L_=listAny(cat),arr=listFor(cat),n_=arr.length;
   let info=n_?n_+" "+(n_===1?L_.one:(n_%10>=2&&n_%10<=4&&(n_%100<10||n_%100>20))?L_.few:L_.many):L_.add.replace(/^\+ /,"");
   let cls="";
-  if(n_){const n=arr.map(x=>({x,u:subDue(x.day)})).sort((a,b)=>a.u.days-b.u.days)[0];cls=subState(n.x).cls;
-    info+=" · sledeći: "+esc(n.x.name)+" "+(n.u.days===0?"danas":n.u.days===1?"sutra":"za "+n.u.days+" dana")}
+  if(n_){const open=arr.filter(x=>!subPaidTx(x,cur)).sort((a,b)=>a.day-b.day);
+    if(!open.length){cls="s-paid";info+=" · sve plaćeno ✓"}
+    else{const late=open.filter(x=>subState(x,cur).cls==="s-late"),n=late[0]||open[0],st=subState(n,cur);cls=st.cls;
+      info+=late.length?" · neupisano: "+late.length:" · sledeći: "+esc(n.name)+" ("+st.txt.toLowerCase()+")"}}
   if(cat==="pretplate")info=info.replace("sledeći:","sledeća:");
   return `<button type="button" class="subs-tg ${cls}" data-subtg="${cat}" aria-expanded="${subsOpen[cat]}" aria-controls="subs_${cat}"><span class="tg-name">${name}<span class="chev" aria-hidden="true">›</span></span><small>${info}</small></button>`}
 let subSort=true;try{subSort=localStorage.getItem("budzet-subsort")!=="0"}catch(e){}
@@ -665,8 +707,7 @@ function subsBlock(cat,budget){
   const L_=listAny(cat),arr=listFor(cat),total=arr.reduce((s,x)=>s+(+x.amount||0),0);
   let h=`<div class="subs" id="subs_${cat}"><div class="subs-head"><span class="lbl">${L_.title}</span><label class="mini-sw"><input type="checkbox" class="subSort" ${subSort?"checked":""}> Po datumu</label></div>`;
   if(!arr.length)h+=`<p class="note" style="margin:4px 0 10px">${L_.empty}</p>`;
-  else{h+=`<div class="sublist">`;subsSorted(arr).forEach(s=>{const st=subState(s);
-    h+=`<button type="button" class="srow ${st.cls}" data-sub="${esc(s.id)}"><span class="sday num">${s.day}.</span><span class="mid"><b>${esc(s.name)}</b><span>${st.txt}</span></span><span class="amt num">${eur(s.amount)}</span></button>`});
+  else{h+=`<div class="sublist">`;subsSorted(arr).forEach(s=>{h+=srowHTML(s,cur)});
     const dv=planDirtyKey===cur&&planDirty["b_"+cat]!==undefined?parseNum(planDirty["b_"+cat]):NaN,bud=isNaN(dv)?budget:dv,same=Math.abs(total-bud)<.005;
     h+=`</div><div class="subs-sum num"><span>Zbir: <b>${eur(total)}</b> · budžet ${eur(bud)}${same?' <span class="okmark">✓ jednako</span>':""}</span><button type="button" class="linkbtn" data-tobudget="${cat}">Postavi budžet na zbir</button></div>`}
   return h+`<button type="button" class="btn ghost" data-addsub="${cat}" style="padding:10px;font-size:14px">${L_.add}</button></div>`;
@@ -679,6 +720,7 @@ function openSubSheet(s,cat){
    <div class="inrow"><label class="lbl" for="s_name">Naziv</label><input id="s_name" maxlength="40" placeholder="${L_.ph}" value="${esc(s?s.name:"")}"></div>
    <div class="inrow"><label class="lbl" for="s_day">${L_.dayL}</label><input id="s_day" type="number" inputmode="numeric" min="1" max="31" placeholder="npr. 15" value="${s?s.day:""}"></div>
    <p class="note" style="margin:-4px 0 10px">Ako mesec nema taj dan (npr. 31.), računa se poslednji dan meseca.${cat==="racuni"?" Ako se iznos menja iz meseca u mesec, upiši prosečan.":""}</p>
+   ${accounts.length?`<div class="inrow"><label class="lbl" for="s_acc">Plaća se sa</label><select id="s_acc">${accOptions(s&&s.account||"",true)}</select></div>`:""}
    <div class="err" id="s_err"></div>
    <div class="actions"><button class="btn primary" type="submit">${edit?"Sačuvaj":L_.saveNew}</button>
    ${edit?`<button class="btn danger" type="button" id="s_del">${L_.del}</button>`:""}
@@ -694,7 +736,7 @@ function openSubSheet(s,cat){
     if(isNaN(amt)||amt<0){$("#s_err").textContent="Unesi iznos, npr. 12,99.";return}
     if(!name){$("#s_err").textContent=L_.nameErr;return}
     if(!(day>=1&&day<=31)){$("#s_err").textContent="Dan mora biti od 1 do 31.";return}
-    const rec={...(s||{id:newId("s"),created:Date.now()}),cat,name,day,amount:Math.round(amt*100)/100};
+    const rec={...(s||{id:newId("s"),created:Date.now()}),cat,name,day,amount:Math.round(amt*100)/100,account:$("#s_acc")?$("#s_acc").value:(s&&s.account)||""};
     try{await store.set("subs",rec);close();toast(edit?L_.tSave:L_.tAdd)}catch(err){$("#s_err").textContent=errMsg(err)}};
 }
 
@@ -716,7 +758,7 @@ function bindPlan(){
     const inc=incSum(incomes);
     document.querySelectorAll("[data-cat]").forEach(i=>{const v=parseNum(i.value);if(isNaN(v)||v<0)bad=true;budgets[i.dataset.cat]=Math.round(v*100)/100});
     if(bad){$("#planErr").textContent="Proveri iznose: koristi samo brojeve, npr. 480,60.";return}
-    try{await store.setMonth(cur,{incomes,income:Math.round(inc*100)/100,carry:carry===null?null:Math.round(carry*100)/100,budgets});planDirty={};toast("Plan sačuvan")}
+    try{await store.setMonth(cur,{carry:carry===null?null:Math.round(carry*100)/100,budgets});planDirty={};toast("Plan sačuvan")}
     catch(e){$("#planErr").textContent=errMsg(e)}
   };
 }
@@ -1017,6 +1059,39 @@ function bindGroceries(){const s=$("#gsearch");if(!s)return;
     out.innerHTML=`<p class="note" style="margin:8px 0 4px">${hits.length} ${hits.length===1?"kupovina":"kupovina"}</p>`+hits.slice(0,40).map(({it,r})=>{const d=new Date(r.date+"T12:00");
       return`<div class="kv"><span>${esc(it.name)}<br><span class="muted">${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${esc(r.store)}</span></span><b class="num">${eur(it.price)}</b></div>`}).join("")}}
 
+/* ---------- uplate (income) ---------- */
+let lastIncAcc="";try{lastIncAcc=localStorage.getItem("budzet-lastincacc")||""}catch(e){}
+function openIncSheet(u){
+  const edit=!!u;let src=u?u.src:(INC[0]||{}).id;const date=u?u.date:(mkey(todayISO())===cur?todayISO():cur+"-01");
+  const srcs=INC.slice();if(u&&!srcs.some(x=>x.id===u.src))srcs.push({id:u.src,name:"Ostalo"});
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="incForm" role="dialog" aria-label="${edit?"Izmeni uplatu":"Nova uplata"}"><div class="grab"></div>
+   ${edit?"<h2>Izmeni uplatu</h2>":`<div class="seg" style="margin-bottom:12px"><button type="button" data-kind="exp" aria-selected="false">Trošak</button><button type="button" aria-selected="true">Uplata</button></div>`}
+   <div class="amt-in inc-amt"><span>+</span><input id="u_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${u?nf.format(u.amount):""}"><span>€</span></div>
+   <div class="lbl" style="margin-bottom:8px">Izvor prihoda</div><div class="chips">${srcs.map(x=>`<button type="button" class="chip" data-src="${esc(x.id)}" style="--gc:var(--ok)" aria-pressed="${x.id===src}">${esc(x.name)}</button>`).join("")}</div>
+   <div class="inrow"><label class="lbl" for="u_desc">Opis</label><input id="u_desc" maxlength="80" placeholder="npr. plata za septembar" value="${esc(u?u.desc:"")}"></div>
+   <div class="inrow"><label class="lbl" for="u_date">Datum</label><input id="u_date" type="date" value="${date}"></div>
+   ${accounts.length?`<div class="inrow"><label class="lbl" for="u_acc">Uplaćeno na</label><select id="u_acc">${accOptions(u?u.account||"":(accounts.some(a=>a.id===lastIncAcc)?lastIncAcc:""),true)}</select></div>`:""}
+   <div class="err" id="u_err"></div>
+   <div class="actions"><button class="btn primary inc-btn" type="submit">${edit?"Sačuvaj izmene":"Dodaj uplatu"}</button>
+   ${edit?`<button class="btn danger" type="button" id="u_del">Obriši uplatu</button>`:""}
+   <button class="btn ghost" type="button" id="u_cancel">Otkaži</button></div></form></div>`;
+  const close=()=>$("#layer").innerHTML="";
+  $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};$("#u_cancel").onclick=close;
+  if($("#incForm [data-kind=exp]"))$("#incForm [data-kind=exp]").onclick=()=>openSheet(null);
+  document.querySelectorAll("#incForm [data-src]").forEach(b=>b.onclick=()=>{src=b.dataset.src;document.querySelectorAll("#incForm [data-src]").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+  if(!edit)setTimeout(()=>$("#u_amt").focus(),60);
+  if(edit){let armed=false;$("#u_del").onclick=async()=>{if(!armed){armed=true;$("#u_del").textContent="Dodirni ponovo za brisanje";return}
+    try{await store.del("uplate",u.id);close();toast("Uplata obrisana")}catch(e){$("#u_err").textContent=errMsg(e)}}}
+  $("#incForm").onsubmit=async e=>{e.preventDefault();
+    const a=parseNum($("#u_amt").value),d=$("#u_date").value;
+    if(isNaN(a)||a<=0){$("#u_err").textContent="Unesi iznos veći od nule, npr. 1.250,00.";return}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){$("#u_err").textContent="Izaberi datum.";return}
+    if(!src){$("#u_err").textContent="Izaberi izvor prihoda.";return}
+    const rec={id:u?u.id:newId("u"),date:d,month:mkey(d),src,desc:$("#u_desc").value.trim().slice(0,80),amount:Math.round(a*100)/100,account:$("#u_acc")?$("#u_acc").value:(u&&u.account)||"",created:u?u.created:Date.now()};
+    if(!u&&rec.account){lastIncAcc=rec.account;try{localStorage.setItem("budzet-lastincacc",lastIncAcc)}catch(e){}}
+    try{await store.set("uplate",rec);close();toast(edit?"Uplata sačuvana":"Uplata dodata: +"+eur(rec.amount));if(rec.month!==cur){cur=rec.month;picked=true;render()}}
+    catch(err){$("#u_err").textContent=errMsg(err)}};
+}
 /* ---------- sheet (add / edit) ---------- */
 function openSheet(t){
   const edit=!!t;const firstCat=t?t.cat:"hrana";
@@ -1024,7 +1099,7 @@ function openSheet(t){
   let sel=firstCat;
   const chips=GROUPS.map(G=>G.cats.map(([id,name])=>`<button type="button" class="chip" data-c="${id}" style="--gc:var(${G.color})" aria-pressed="${id===sel}">${name}</button>`).join("")).join("");
   $("#layer").innerHTML=`<div class="scrim" id="scrim"><form class="sheet" id="txForm" role="dialog" aria-label="${edit?"Izmeni trošak":"Novi trošak"}">
-   <div class="grab"></div><h2>${edit?"Izmeni trošak":"Novi trošak"}</h2>
+   <div class="grab"></div>${edit?"<h2>Izmeni trošak</h2>":`<div class="seg" style="margin-bottom:12px"><button type="button" aria-selected="true">Trošak</button><button type="button" data-kind="inc" aria-selected="false">Uplata</button></div>`}
    ${!edit&&scanReady()?`<button type="button" class="btn scan" id="f_scan" style="margin-bottom:10px">${CAM}Skeniraj QR kod računa</button>`:""}
    <div class="amt-in"><input id="f_amt" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${t?nf.format(t.amount):""}"><span>€</span></div>
    <div class="lbl" style="margin-bottom:8px">Kategorija</div><div class="chips">${chips}</div>
@@ -1040,6 +1115,7 @@ function openSheet(t){
   $("#f_cancel").onclick=close;
   document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{sel=b.dataset.c;document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===b))});
   if($("#f_scan"))$("#f_scan").onclick=()=>{close();pickReceipt()};
+  if($("#txForm [data-kind=inc]"))$("#txForm [data-kind=inc]").onclick=()=>openIncSheet(null);
   if(!edit)setTimeout(()=>$("#f_amt").focus(),60);
   if(edit){let armed=false;$("#f_del").onclick=async()=>{
     if(!armed){armed=true;$("#f_del").textContent="Dodirni ponovo za brisanje";return}
@@ -1049,7 +1125,7 @@ function openSheet(t){
     if(isNaN(a)||a<=0){$("#f_err").textContent="Unesi iznos veći od nule, npr. 12,50.";return}
     if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){$("#f_err").textContent="Izaberi datum.";return}
     const id=t?t.id:("t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6));
-    const rec={id,date:d,month:mkey(d),cat:sel,desc:$("#f_desc").value.trim().slice(0,80),amount:Math.round(a*100)/100,created:t?t.created:Date.now(),account:$("#f_acc")?$("#f_acc").value:(t&&t.account)||""};
+    const rec={id,date:d,month:mkey(d),cat:sel,desc:$("#f_desc").value.trim().slice(0,80),amount:Math.round(a*100)/100,created:t?t.created:Date.now(),account:$("#f_acc")?$("#f_acc").value:(t&&t.account)||"",...(t&&t.sub?{sub:t.sub}:{})};
     if(!t&&rec.account){lastAcc=rec.account;try{localStorage.setItem("budzet-lastacc",lastAcc)}catch(e){}}
     try{await store.setTx(rec);close();toast(edit?"Izmene sačuvane":"Trošak dodat");if(rec.month!==cur){cur=rec.month;picked=true;render()}}
     catch(err){$("#f_err").textContent=errMsg(err)}};
@@ -1066,6 +1142,10 @@ $("#nextM").onclick=()=>{cur=shift(cur,1);picked=true;render()};
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();window.scrollTo(0,0)});
 $("#fab").onclick=()=>openSheet(null);
 $("#main").addEventListener("click",e=>{
+  const py=e.target.closest("[data-pay]");if(py){py.disabled=true;paySub(py.dataset.pay,py.dataset.mk);return}
+  const up=e.target.closest("[data-unpay]");if(up){unpaySub(up);return}
+  const ui=e.target.closest("[data-upl]");if(ui){const u=uplate.find(x=>x.id===ui.dataset.upl);if(u)openIncSheet(u);return}
+  if(e.target.closest("[data-addinc]")){openIncSheet(null);return}
   const b=e.target.closest("[data-tx]");if(b){const t=txs.find(x=>x.id===b.dataset.tx);if(!t)return;const r=t.receipt&&receipts.find(x=>x.id===t.receipt);if(r)openReceiptDetail(r);else openSheet(t);return}
   const rc=e.target.closest("[data-rcpt]");if(rc){const r=receipts.find(x=>x.id===rc.dataset.rcpt);if(r)openReceiptDetail(r);return}
   const tv=e.target.closest("[data-txv]");if(tv){txView=tv.dataset.txv;render();return}
@@ -1175,7 +1255,7 @@ async function openBudget(FB,bid){
   try{const b=await FB.getDoc(FB.doc(FB.db,"budgets/"+bid));const d=b.exists()?b.data():{};
     if(d.migrating&&d.owner===user.uid){showBusy("Završavam prenos podataka…");await migrateLegacy(FB,user.uid,bid)}}catch(e){}
   BID=bid;document.body.classList.remove("nologin");
-  months={};txs=[];accounts=[];transfers=[];subs=[];receipts=[];ruleMap={};
+  months={};txs=[];uplate=[];accounts=[];transfers=[];subs=[];receipts=[];ruleMap={};
   Object.keys(ready).forEach(k=>ready[k]=false);picked=false;tab="pregled";txView="troskovi";window.scrollTo(0,0);render();
   const base="budgets/"+bid+"/";const clean=d=>JSON.parse(JSON.stringify(d));
   const col=(c,fn,k)=>unsubs.push(FB.onSnapshot(FB.collection(FB.db,base+c),s=>fn(s.docs.map(d=>({...d.data(),id:d.id}))),e=>{console.error(c,e);ready[k]=true;render()}));
@@ -1190,6 +1270,7 @@ async function openBudget(FB,bid){
   col("transfers",a=>{transfers=a;ready.r=true;render()},"r");
   col("months",a=>{const o={};a.forEach(d=>{const{id,...rest}=d;o[id]=rest});months=o;ready.m=true;pickStart();render()},"m");
   col("tx",a=>{txs=a;ready.t=true;render()},"t");
+  col("uplate",a=>{uplate=a;ready.u=true;render()},"u");
   col("catrules",a=>{const o={};a.forEach(x=>{if(x.k&&x.sub)o[x.k]=x.sub});ruleMap=o},"c");
   unsubs.push(FB.onSnapshot(FB.query(FB.collection(FB.db,"budgets"),FB.where("members","array-contains",user.uid)),s=>{myBudgets=s.docs.map(d=>({id:d.id,name:d.data().name||"Budžet",owner:d.data().owner}));if(tab==="plan")render()},()=>{}));
   unsubs.push(FB.onSnapshot(FB.query(FB.collection(FB.db,"invites"),FB.where("createdBy","==",user.uid)),s=>{myInvites=s.docs.map(d=>({...d.data(),id:d.id}));if(tab==="plan")render()},()=>{}));
@@ -1246,13 +1327,13 @@ function bindSettings(){
     try{await FB.updateDoc(FB.doc(FB.db,"budgets/"+BID),{members:FB.arrayRemove(me),["memberEmails."+me]:FB.deleteField()});await FB.setDoc(FB.doc(FB.db,"users/"+me),{budgetId:""},{merge:true});afterLogin(FB,fbUser)}catch(e){$("#bdErr").textContent=errMsg(e)}}}
   if($("#bd_switch"))$("#bd_switch").onchange=e=>{const v=e.target.value;if(v!==BID)openBudget(FB,v)};
   $("#bd_join").onclick=async()=>{const code=cleanCode($("#bd_code").value);if(!code)return;try{const bid=await redeem(FB,fbUser,code);toast("Pridružio si se budžetu");await openBudget(FB,bid)}catch(e){$("#bdErr").textContent=inviteErr(e)}};
-  $("#bkExport").onclick=()=>{const data={months:Object.entries(months).map(([id,v])=>({...v,id})),tx:txs,accounts,transfers,subs,receipts,cats:CATDEF};
+  $("#bkExport").onclick=()=>{const data={months:Object.entries(months).map(([id,v])=>({...v,id})),tx:txs,uplate,accounts,transfers,subs,receipts,cats:CATDEF};
     const blob=new Blob([JSON.stringify({app:"budzetiranje",version:2,exported:todayISO(),data},null,1)],{type:"application/json"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="budzet-kopija-"+todayISO()+".json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)};
   $("#bkImport").onclick=()=>{const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
     try{const j=JSON.parse(await f.text());const d=j.data||j;let n=0;
       if(Array.isArray(d.cats)&&d.cats.length)await store.setBudget({cats:d.cats});
-      for(const c of ["months","tx","accounts","transfers","subs","receipts"])for(const r of (d[c]||[])){if(!r||!r.id)continue;const {id,...rest}=r;
+      for(const c of ["months","tx","uplate","accounts","transfers","subs","receipts"])for(const r of (d[c]||[])){if(!r||!r.id)continue;const {id,...rest}=r;
         if(c==="months")await store.setMonth(id,rest);else await store.set(c,{...rest,id});n++}
       toast(n+" zapisa uvezeno")}catch(e){$("#bkErr").textContent="Fajl nije ispravna rezervna kopija."}};inp.click()};
   $("#logout").onclick=()=>FB.signOut();
