@@ -15,7 +15,7 @@
 /* ======================================================================
    PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
    ====================================================================== */
-const APP_VERSION="2.3.2";
+const APP_VERSION="2.3.3";
 const CONFIG={
   firebase:{
     apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
@@ -349,6 +349,8 @@ body{overscroll-behavior-y:none}
 .fut-row>span:first-child{width:52px;flex:none;color:var(--muted);font-size:12.5px}
 .fut-row .mid{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acc-hist{padding:0 10px;margin-bottom:10px}
+.crow[data-catv]{cursor:pointer}
+.crow[data-catv]:active{background:var(--surface2)}
 </style>
 
 </head>
@@ -591,7 +593,7 @@ function viewOverview(c){
     h+=`<section class="group" style="--gc:var(${G.color})"><div class="ghead"><h3>${G.name}</h3><span class="num">${eur(gg.s)} / ${eur(gg.b)}</span></div>`;
     G.cats.forEach(([id,name])=>{const {b,s}=c.cats[id];const[st,cls]=status(b,s);const r=b?s/b:(s?1:0);
       const col=cls==="bad"?"var(--bad)":cls==="warn"?"var(--warn)":`var(${G.color})`;
-      h+=`<div class="crow"><div class="crow-top"><span class="crow-name">${name}</span><span class="crow-amt num"><b>${eur(s)}</b> / ${eur(b)}</span></div>
+      h+=`<div class="crow" role="button" tabindex="0" data-catv="${id}"><div class="crow-top"><span class="crow-name">${name}</span><span class="crow-amt num"><b>${eur(s)}</b> / ${eur(b)}</span></div>
        <div class="bar"><i style="width:${Math.min(r,1)*100}%;background:${col}"></i></div>
        <div class="crow-foot num"><span>Preostalo ${eur(b-s)} · ${pct(c.plan?b/c.plan:0)} budžeta</span><span class="pill ${cls}">${st}</span></div></div>`});
     h+=`</section>`});
@@ -1087,6 +1089,19 @@ function bindGroceries(){const s=$("#gsearch");if(!s)return;
     out.innerHTML=`<p class="note" style="margin:8px 0 4px">${hits.length} ${hits.length===1?"kupovina":"kupovina"}</p>`+hits.slice(0,40).map(({it,r})=>{const d=new Date(r.date+"T12:00");
       return`<div class="kv"><span>${esc(it.name)}<br><span class="muted">${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${esc(r.store)}</span></span><b class="num">${eur(it.price)}</b></div>`}).join("")}}
 
+/* ---------- troškovi jedne kategorije ---------- */
+function openCatTx(id){
+  const list=txs.filter(t=>t.cat===id&&t.month===cur).sort((a,b)=>b.date.localeCompare(a.date));
+  const sum=list.reduce((a,t)=>a+(+t.amount||0),0);
+  $("#layer").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-label="Troškovi kategorije"><div class="grab"></div>
+   <h2>${esc((CATS[id]||{}).name||id)}</h2><p class="note" style="margin:-6px 0 12px">${MONTHS[+cur.slice(5)-1]} ${cur.slice(0,4)} · ${list.length} ${list.length===1?"trošak":"troškova"} · ${eur(sum)}</p>
+   ${list.length?`<div class="txlist" style="padding:0 10px">${list.map(t=>{const d=new Date(t.date+"T12:00"),ac=accounts.find(a=>a.id===t.account);
+     return `<button type="button" class="fut-row" data-ct="${esc(t.id)}"><span class="num">${d.getDate()}. ${MONTHS[d.getMonth()].slice(0,3)}</span><span class="mid">${esc(t.desc||"Bez opisa")}${ac?" · "+esc(ac.name):""}</span><b class="num">−${eur(t.amount)}</b></button>`}).join("")}</div>
+   <p class="note">Dodirni trošak da ga izmeniš ili obrišeš.</p>`:`<div class="empty"><b>Nema troškova</b>U ovoj kategoriji za ovaj mesec nema upisanih troškova. Iznos ${eur((calc(cur).cats[id]||{}).b||0)} je plan, a ne potrošnja.</div>`}
+   <div class="actions"><button class="btn ghost" type="button" id="ct_close">Zatvori</button></div></div></div>`;
+  $("#ct_close").onclick=()=>$("#layer").innerHTML="";$("#scrim").onclick=e=>{if(e.target.id==="scrim")$("#layer").innerHTML=""};
+  document.querySelectorAll("[data-ct]").forEach(b=>b.onclick=()=>{const t=txs.find(x=>x.id===b.dataset.ct);if(!t)return;const r=t.receipt&&receipts.find(x=>x.id===t.receipt);if(r)openReceiptDetail(r);else openSheet(t)});
+}
 /* ---------- uplate (income) ---------- */
 let lastIncAcc="";try{lastIncAcc=localStorage.getItem("budzet-lastincacc")||""}catch(e){}
 function openIncSheet(u){
@@ -1170,6 +1185,7 @@ $("#nextM").onclick=()=>{cur=shift(cur,1);picked=true;render()};
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();window.scrollTo(0,0)});
 $("#fab").onclick=()=>openSheet(null);
 $("#main").addEventListener("click",e=>{
+  const cv=e.target.closest("[data-catv]");if(cv){openCatTx(cv.dataset.catv);return}
   const py=e.target.closest("[data-pay]");if(py){py.disabled=true;paySub(py.dataset.pay,py.dataset.mk);return}
   const up=e.target.closest("[data-unpay]");if(up){unpaySub(up);return}
   const ui=e.target.closest("[data-upl]");if(ui){const u=uplate.find(x=>x.id===ui.dataset.upl);if(u)openIncSheet(u);return}
