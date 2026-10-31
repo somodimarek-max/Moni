@@ -15,7 +15,7 @@
 /* ======================================================================
    PODEŠAVANJE — ovde nalepi svoje podatke (vidi UPUTSTVO.md, korak 3 i 5)
    ====================================================================== */
-const APP_VERSION="2.3.0";
+const APP_VERSION="2.3.2";
 const CONFIG={
   firebase:{
     apiKey:"AIzaSyBsZ-QvIoqN-8nE1gPoohUtGZqHvhHjgGM",
@@ -343,6 +343,12 @@ body{overscroll-behavior-y:none}
 .inc-txt{color:var(--ok)}
 .inc-amt span:first-child{color:var(--ok)}
 .btn.inc-btn{background:var(--ok)}
+.fut{border-color:var(--g1)}
+.fut-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px 4px;background:none;border:0;border-top:1px solid var(--line);text-align:left;color:inherit;font:inherit;font-size:14px}
+.fut-row:first-of-type{border-top:0}
+.fut-row>span:first-child{width:52px;flex:none;color:var(--muted);font-size:12.5px}
+.fut-row .mid{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc-hist{padding:0 10px;margin-bottom:10px}
 </style>
 
 </head>
@@ -485,6 +491,7 @@ const ATYPES={
   ostalo:{name:"Ostalo",ic:"•",inc:true,color:"--muted"}};
 const CAM='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 const newId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const isoOf=ms=>{const d=new Date(ms||0);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 function accBal(a){const since=a.setAt||0;let b=+a.opening||0;
   txs.forEach(t=>{if(t.account===a.id&&(t.created||0)>since)b-=+t.amount||0});
   uplate.forEach(u=>{if(u.account===a.id&&(u.created||0)>since)b+=+u.amount||0});
@@ -611,6 +618,12 @@ function viewTx(c){
   const ul=uplate.filter(u=>u.month===cur);
   let h=txSeg()+`<div class="tx-head"><h2 class="sec-title" style="margin:0">Troškovi</h2><b class="num">${eur(c.spent)}</b></div>${ul.length?`<div class="tx-head" style="margin-top:-8px"><span class="muted">Uplate</span><b class="num inc-txt">+${eur(c.inc)}</b></div>`:""}`;
   if(scanReady())h+=`<button class="btn scan" type="button" data-scan="1">${CAM}Skeniraj QR kod računa</button>`;
+  const TD=todayISO();
+  if(cur===mkey(TD)){const fut=txs.filter(t=>t.date>TD&&t.month!==cur).map(t=>({...t,_k:"t"})).concat(uplate.filter(u=>u.date>TD&&u.month!==cur).map(u=>({...u,_k:"u"}))).sort((a,b)=>a.date.localeCompare(b.date));
+    if(fut.length){h+=`<section class="card fut"><div class="lbl" style="margin-bottom:6px">Upisano u naredne mesece (${fut.length})</div>`;
+      fut.slice(0,8).forEach(x=>{const d=new Date(x.date+"T12:00");const nm=x._k==="u"?((INC.find(i=>i.id===x.src)||{}).name||"Uplata"):((CATS[x.cat]||{}).name||x.cat);
+        h+=`<button type="button" class="fut-row" ${x._k==="u"?`data-upl="${esc(x.id)}"`:`data-tx="${esc(x.id)}"`}><span class="num">${d.getDate()}. ${MONTHS[d.getMonth()].slice(0,3)}</span><span class="mid">${esc(nm)}${x.desc?" · "+esc(x.desc):""}</span><b class="num ${x._k==="u"?"inc-txt":""}">${x._k==="u"?"+":"−"}${eur(x.amount)}</b></button>`});
+      h+=`<p class="note" style="margin:6px 0 0">Novac je već skinut sa računa, a trošak se vodi u budžetu meseca sa datuma. Dodirni da izmeniš ili obrišeš.</p></section>`}}
   if(!list.length&&!ul.length)return h+`<div class="txlist"><div class="empty"><b>Još nema troškova ni uplata za ${MONTHS[+cur.slice(5)-1]}</b>Dodaj ih dugmetom + dole.</div></div>`;
   if(list.length)h+=`<div class="copybox"><button class="btn ghost" id="copyTx" type="button">Kopiraj za Google tabelu (${list.length})</button>
    <p class="note" style="margin:6px 2px 0">U listu TRANSAKCIJE ${MONTHS[+cur.slice(5)-1].toUpperCase()} klikni prvu praznu ćeliju ispod DATUM i nalepi (Ctrl+V).</p>
@@ -618,10 +631,11 @@ function viewTx(c){
   let day="";h+="<div>";
   const rows=list.map(t=>({...t,_k:"t"})).concat(ul.map(u=>({...u,_k:"u"}))).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
   rows.forEach(t=>{if(t.date!==day){if(day)h+="</div>";day=t.date;const d=new Date(t.date+"T12:00");h+=`<div class="day">${DAYS[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}</div><div class="txlist">`}
-    if(t._k==="u"){const sx=INC.find(x=>x.id===t.src),ac=accounts.find(a=>a.id===t.account);const subl=[t.desc||"Uplata",ac?ac.name:""].filter(Boolean).join(" · ");
+    const zak="";
+    if(t._k==="u"){const sx=INC.find(x=>x.id===t.src),ac=accounts.find(a=>a.id===t.account);const subl=[t.desc||"Uplata",ac?ac.name:"",zak].filter(Boolean).join(" · ");
       h+=`<button class="tx" data-upl="${esc(t.id)}" style="--gc:var(--ok)"><span class="ic">+</span><span class="mid"><b>${esc(sx?sx.name:"Uplata")}</b><span>${esc(subl)}</span></span><span class="amt num inc-txt">+${eur(t.amount)}</span></button>`;return}
     const cat=CATS[t.cat];const G=cat?cat.group:{color:"--muted"};const ac=accounts.find(a=>a.id===t.account);
-    const subl=[t.desc||"Bez opisa",ac?ac.name:""].filter(Boolean).join(" · ");
+    const subl=[t.desc||"Bez opisa",ac?ac.name:"",zak].filter(Boolean).join(" · ");
     h+=`<button class="tx" data-tx="${esc(t.id)}" style="--gc:var(${G.color})"><span class="ic">${esc((cat?cat.name:"?").slice(0,2).toUpperCase())}</span><span class="mid"><b>${esc(cat?cat.name:t.cat)}</b><span>${esc(subl)}</span></span><span class="amt num">−${eur(t.amount)}</span></button>`});
   return h+"</div></div>";
 }
@@ -784,6 +798,15 @@ function viewAccounts(){
   h+=`<p class="note">Stanje računa = upisano stanje − troškovi plaćeni sa tog računa ± prenosi. Računi van budžeta (npr. investicije) ne ulaze u „Raspoloživo za budžet“.</p>`;
   return h;
 }
+function accHistory(a){
+  const TD=todayISO();
+  const rows=txs.filter(t=>t.account===a.id).map(t=>({d:t.date,k:"t",id:t.id,n:((CATS[t.cat]||{}).name||t.cat)+(t.desc?" · "+t.desc:""),v:-(+t.amount||0)}))
+    .concat(uplate.filter(u=>u.account===a.id).map(u=>({d:u.date,k:"u",id:u.id,n:((INC.find(i=>i.id===u.src)||{}).name||"Uplata")+(u.desc?" · "+u.desc:""),v:+u.amount||0})))
+    .concat(transfers.filter(r=>r.from===a.id||r.to===a.id).map(r=>({d:r.date||isoOf(r.created),k:"r",id:r.id,n:"Prenos "+(r.from===a.id?"na ":"sa ")+((accounts.find(x=>x.id===(r.from===a.id?r.to:r.from))||{}).name||"?"),v:r.from===a.id?-r.amount:+r.amount})))
+    .sort((x,y)=>y.d.localeCompare(x.d)).slice(0,15);
+  if(!rows.length)return "";
+  return `<div class="lbl" style="margin:4px 0 6px">Poslednje promene</div><div class="txlist acc-hist">${rows.map(r=>{const d=new Date(r.d+"T12:00");
+    return `<button type="button" class="fut-row" data-ah="${r.k}:${esc(r.id)}"><span class="num">${d.getDate()}. ${MONTHS[d.getMonth()].slice(0,3)}</span><span class="mid">${esc(r.n)}${r.d>TD?' <span class="muted">→ '+MONTHS[d.getMonth()]+'</span>':""}</span><b class="num ${r.v>0?"inc-txt":""}">${r.v>0?"+":"−"}${eur(Math.abs(r.v))}</b></button>`}).join("")}</div>`}
 function openAccountSheet(a){
   const edit=!!a;let type=a?a.type:"kartica";
   const typeChips=Object.entries(ATYPES).map(([k,T])=>`<button type="button" class="chip" data-t="${k}" style="--gc:var(${T.color==="--muted"?"--head":T.color})" aria-pressed="${k===type}">${T.name}</button>`).join("");
@@ -793,12 +816,17 @@ function openAccountSheet(a){
    <div class="lbl" style="margin-bottom:8px">Vrsta</div><div class="chips">${typeChips}</div>
    <div class="inrow"><label class="lbl" for="a_bal">Trenutno stanje (€)</label><input id="a_bal" inputmode="decimal" placeholder="0,00" value="${a?nf.format(accBal(a)):""}"></div>
    <label class="switch" for="a_inc"><span><b>Uračunaj u budžet</b><small>Uključeno: novac se vodi kao raspoloživ za mesečno trošenje</small></span><input type="checkbox" id="a_inc" ${(a?a.include:ATYPES[type].inc)?"checked":""}></label>
+   ${edit?accHistory(a):""}
    <div class="err" id="a_err"></div>
    <div class="actions"><button class="btn primary" type="submit">${edit?"Sačuvaj":"Dodaj račun"}</button>
    ${edit?`<button class="btn danger" type="button" id="a_del">Obriši račun</button>`:""}
    <button class="btn ghost" type="button" id="a_cancel">Otkaži</button></div></form></div>`;
   const close=()=>$("#layer").innerHTML="";
   $("#scrim").onclick=e=>{if(e.target.id==="scrim")close()};$("#a_cancel").onclick=close;
+  document.querySelectorAll("#accForm [data-ah]").forEach(b=>b.onclick=()=>{const [k,id]=b.dataset.ah.split(":");
+    if(k==="t"){const t=txs.find(x=>x.id===id);if(!t)return;const r=t.receipt&&receipts.find(x=>x.id===t.receipt);if(r)openReceiptDetail(r);else openSheet(t)}
+    else if(k==="u"){const u=uplate.find(x=>x.id===id);if(u)openIncSheet(u)}
+    else{const r=transfers.find(x=>x.id===id);if(r)openTransferSheet(r)}});
   let incTouched=false;$("#a_inc").onchange=()=>incTouched=true;
   document.querySelectorAll("#accForm .chip").forEach(b=>b.onclick=()=>{type=b.dataset.t;document.querySelectorAll("#accForm .chip").forEach(x=>x.setAttribute("aria-pressed",x===b));if(!edit&&!incTouched)$("#a_inc").checked=ATYPES[type].inc});
   if(edit){let armed=false;$("#a_del").onclick=async()=>{
@@ -1301,6 +1329,7 @@ function settingsCard(){
    <div class="err" id="bdErr"></div></section>
    <section class="card"><h2 class="sec-title">Nalog i podaci</h2>
    <div class="kv"><span>Prijavljen kao</span><b>${esc(fbUser&&fbUser.email||"")}</b></div>
+   <div class="kv"><span>Verzija aplikacije</span><span><b class="num">${APP_VERSION}</b> · <button type="button" class="linkbtn" id="updCheck">Proveri ažuriranje</button></span></div>
    <div class="row2" style="margin-top:10px"><button class="btn ghost" type="button" id="bkExport">Izvezi kopiju</button><button class="btn ghost" type="button" id="bkImport">Uvezi kopiju</button></div>
    <div class="err" id="bkErr"></div><button class="btn ghost" type="button" id="logout" style="margin-top:4px">Odjavi se</button></section>`;
   return h}
@@ -1337,22 +1366,24 @@ function bindSettings(){
         if(c==="months")await store.setMonth(id,rest);else await store.set(c,{...rest,id});n++}
       toast(n+" zapisa uvezeno")}catch(e){$("#bkErr").textContent="Fajl nije ispravna rezervna kopija."}};inp.click()};
   $("#logout").onclick=()=>FB.signOut();
+  $("#updCheck").onclick=()=>checkUpdate(true);
 }
 /* ---------- bez zumiranja + automatsko ažuriranje ---------- */
 document.addEventListener("gesturestart",e=>e.preventDefault(),{passive:false});
 document.addEventListener("gesturechange",e=>e.preventDefault(),{passive:false});
 document.addEventListener("touchmove",e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
 let lastUpd=0;
-async function checkUpdate(){
-  if(Date.now()-lastUpd<60000)return;lastUpd=Date.now();
+async function checkUpdate(manual){
+  if(!manual&&Date.now()-lastUpd<20000)return;lastUpd=Date.now();
   try{const u=new URL("index.html",location.href);u.searchParams.set("t",Date.now());
     const txt=await (await fetch(u.href,{cache:"no-store"})).text();const m=txt.match(/APP_VERSION="([^"]+)"/);
-    if(!m||m[1]===APP_VERSION)return;
+    if(!m||m[1]===APP_VERSION){if(manual)toast("Imaš najnoviju verziju ("+APP_VERSION+")");return}
     const go=()=>{const n=new URL("./",location.href);n.searchParams.set("v",m[1]);location.replace(n.href)};
-    if(!$("#layer").innerHTML.trim())go();
+    if(manual||!$("#layer").innerHTML.trim()){if(manual)toast("Stiže verzija "+m[1]+"…");go()}
     else if(!document.querySelector(".upd")){const b=document.createElement("button");b.className="upd";b.type="button";b.textContent="Nova verzija je spremna · Osveži";b.onclick=go;document.body.appendChild(b)}
-  }catch(e){}
+  }catch(e){if(manual)toast("Nema veze sa serverom. Proveri internet.")}
 }
+window.addEventListener("pageshow",()=>checkUpdate());window.addEventListener("focus",()=>checkUpdate());
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")checkUpdate()});
 setTimeout(checkUpdate,4000);setInterval(checkUpdate,30*60000);
 start();
